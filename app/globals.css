@@ -1,26 +1,31 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #141414;
+  --foreground: #ffffff;
+  --netflix-red: #e50914;
+  --netflix-red-hover: #f40612;
+  --netflix-black: #141414;
+  --netflix-surface: #181818;
+  --netflix-elevated: #2f2f2f;
+  --netflix-muted: #b3b3b3;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-netflix-red: var(--netflix-red);
+  --color-netflix-red-hover: var(--netflix-red-hover);
+  --color-netflix-black: var(--netflix-black);
+  --color-netflix-surface: var(--netflix-surface);
+  --color-netflix-elevated: var(--netflix-elevated);
+  --color-netflix-muted: var(--netflix-muted);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-geist-sans), Helvetica, Arial, sans-serif;
 }
