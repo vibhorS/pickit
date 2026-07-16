@@ -6,12 +6,34 @@ import { AddMovieModal } from "@/components/collections/add-movie-modal";
 import { MovieDetailDrawer } from "@/components/movie/movie-detail-drawer";
 import { MovieGridCard } from "@/components/movie/movie-grid-card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { countRatedMovies } from "@/lib/vote-status";
 import type { Collection, Movie } from "@/lib/types";
+import { useVoteStore } from "@/store/vote-store";
 
 type CollectionDetailClientProps = {
   collection: Collection;
   initialMovies: Movie[];
 };
+
+type SummaryCardProps = {
+  label: string;
+  value: number | string;
+};
+
+function SummaryCard({ label, value }: SummaryCardProps) {
+  return (
+    <div className="rounded-2xl border border-white/5 bg-netflix-surface px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.35)] sm:px-5">
+      <p className="text-xs font-semibold uppercase tracking-wide text-netflix-muted">
+        {label}
+      </p>
+      <p className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+type MovieFilter = "all" | "unrated";
 
 export function CollectionDetailClient({
   collection,
@@ -21,9 +43,23 @@ export function CollectionDetailClient({
   const [isAddMovieOpen, setIsAddMovieOpen] = useState(false);
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [movieFilter, setMovieFilter] = useState<MovieFilter>("all");
 
-  const movieCount = movies.length;
-  const movieLabel = movieCount === 1 ? "1 movie" : `${movieCount} movies`;
+  const votes = useVoteStore((state) => state.votes);
+
+  const movieIds = movies.map((movie) => movie.id);
+  const totalMovies = movies.length;
+  const moviesYouveRated = countRatedMovies(movieIds, votes);
+  const remainingToRate = Math.max(totalMovies - moviesYouveRated, 0);
+
+  const unratedMovies = movies.filter(
+    (movie) => !votes.some((vote) => vote.movieId === movie.id),
+  );
+  const visibleMovies = movieFilter === "unrated" ? unratedMovies : movies;
+
+  const tonightsPicks = movies.filter((movie) =>
+    votes.some((vote) => vote.movieId === movie.id && vote.vote === "like"),
+  );
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -85,7 +121,6 @@ export function CollectionDetailClient({
                 >
                   {collection.shared ? "Shared" : "Private"}
                 </span>
-                <span className="text-sm text-netflix-muted">{movieLabel}</span>
               </div>
 
               <h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-5xl">
@@ -102,43 +137,130 @@ export function CollectionDetailClient({
             >
               ➕ Add Movie
             </button>
-            <Link
-              href={`/collection/${collection.id}/decide`}
-              className="inline-flex w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-6 py-3.5 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-white/10 sm:w-auto"
+            <button
+              type="button"
+              onClick={() => setMovieFilter("unrated")}
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-6 py-3.5 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-white/10 sm:w-auto"
             >
-              🎲 Start Decision
-            </Link>
+              ▶️ Continue Rating
+            </button>
           </div>
         </header>
 
-        <section className="mt-8 sm:mt-10">
-          <div className="mb-5 flex items-center justify-between gap-3">
-            <h2 className="text-lg font-bold text-white sm:text-xl">Movies</h2>
-            <span className="text-sm text-netflix-muted">{movieCount}</span>
-          </div>
+        <section className="mt-8 grid grid-cols-1 gap-3 sm:mt-10 sm:grid-cols-3 sm:gap-4">
+          <SummaryCard label="Total Movies" value={totalMovies} />
+          <SummaryCard label="Movies You've Rated" value={moviesYouveRated} />
+          <SummaryCard label="Remaining to Rate" value={remainingToRate} />
+        </section>
 
-          {movies.length === 0 ? (
+        {totalMovies === 0 ? (
+          <section className="mt-10 sm:mt-12">
             <EmptyState
               emoji="🎬"
               title="No movies yet"
-              description={`Start building ${collection.name} by adding your first title.`}
+              description={`Start building ${collection.name} by adding your first title, then rate anytime.`}
               action={{
                 label: "➕ Add Movie",
                 onClick: () => setIsAddMovieOpen(true),
               }}
             />
-          ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6">
-              {movies.map((movie) => (
-                <MovieGridCard
-                  key={movie.id}
-                  movie={movie}
-                  onClick={setSelectedMovie}
+          </section>
+        ) : (
+          <>
+            <section className="mt-10 sm:mt-12">
+              <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-xl font-bold text-white sm:text-2xl">
+                    Movies
+                  </h2>
+                  <p className="mt-1 text-sm text-netflix-muted">
+                    Rate movies anytime — your partner can catch up later.
+                  </p>
+                </div>
+
+                <div
+                  role="group"
+                  aria-label="Filter movies"
+                  className="flex w-fit rounded-xl border border-white/10 bg-white/5 p-1"
+                >
+                  <button
+                    type="button"
+                    onClick={() => setMovieFilter("all")}
+                    className={`rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
+                      movieFilter === "all"
+                        ? "bg-netflix-red text-white"
+                        : "text-netflix-muted hover:text-white"
+                    }`}
+                  >
+                    All Movies
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMovieFilter("unrated")}
+                    className={`rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
+                      movieFilter === "unrated"
+                        ? "bg-netflix-red text-white"
+                        : "text-netflix-muted hover:text-white"
+                    }`}
+                  >
+                    Unrated
+                  </button>
+                </div>
+              </div>
+
+              {visibleMovies.length === 0 ? (
+                <EmptyState
+                  emoji="✅"
+                  title="You're caught up"
+                  description="No more movies waiting for your vote. Add a new title or switch back to All Movies."
+                  action={{
+                    label: "Show All Movies",
+                    onClick: () => setMovieFilter("all"),
+                  }}
                 />
-              ))}
-            </div>
-          )}
-        </section>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
+                  {visibleMovies.map((movie) => (
+                    <MovieGridCard
+                      key={movie.id}
+                      movie={movie}
+                      onOpen={setSelectedMovie}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+
+            <section className="mt-10 sm:mt-12">
+              <div className="mb-5">
+                <h2 className="text-xl font-bold text-white sm:text-2xl">
+                  Tonight&apos;s Picks
+                </h2>
+                <p className="mt-1 text-sm text-netflix-muted">
+                  Movies you&apos;d watch from this collection.
+                </p>
+              </div>
+
+              {tonightsPicks.length === 0 ? (
+                <EmptyState
+                  emoji="🍿"
+                  title="No picks yet"
+                  description="Mark I'd Watch on movies you like and they'll show up here."
+                />
+              ) : (
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
+                  {tonightsPicks.map((movie) => (
+                    <MovieGridCard
+                      key={movie.id}
+                      movie={movie}
+                      onOpen={setSelectedMovie}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          </>
+        )}
       </div>
 
       <AddMovieModal

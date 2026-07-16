@@ -82,7 +82,7 @@ export function MovieCard({ movie, onAdd, onPass }: MovieCardProps) {
               onClick={() => onPass?.(movie)}
               className="flex-1 rounded-xl border border-white/10 bg-transparent px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-white/10 active:scale-[0.98]"
             >
-              Pass
+              ❌ Not Interested
             </button>
             <button
               type="button"
@@ -92,7 +92,7 @@ export function MovieCard({ movie, onAdd, onPass }: MovieCardProps) {
               }}
               className="flex-1 rounded-xl bg-netflix-red px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-netflix-red-hover active:scale-[0.98]"
             >
-              {added ? "✓ Added" : "❤️ Add to Bucket"}
+              {added ? "✓ Saved" : "❤️ I'd Watch"}
             </button>
           </div>
         )}

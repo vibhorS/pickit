@@ -52,3 +52,15 @@ export type Collection = {
   shared: boolean;
   movieIds: string[];
 };
+
+// ======================
+// Movie Vote
+// ======================
+
+export type VoteValue = "like" | "pass";
+
+export type MovieVote = {
+  movieId: string;
+  vote: VoteValue;
+  votedAt: Date;
+};
