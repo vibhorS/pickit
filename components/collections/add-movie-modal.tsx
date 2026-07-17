@@ -22,6 +22,7 @@ function mapTmdbResultToMovie(movie: TmdbSearchMovie): Movie {
     genres: movie.genres,
     overview: movie.overview,
     posterUrl: movie.poster ?? "",
+    mediaType: "movie",
   };
 }
 

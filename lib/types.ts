@@ -2,6 +2,8 @@
 // Movie
 // ======================
 
+export type MediaType = "movie" | "tv" | "documentary" | "youtube";
+
 export type Movie = {
   id: string;
   title: string;
@@ -11,6 +13,8 @@ export type Movie = {
   genres: string[];
   overview: string;
   posterUrl: string;
+  /** Content kind. Only "movie" is used in the UI today. */
+  mediaType: MediaType;
 };
 
 // ======================

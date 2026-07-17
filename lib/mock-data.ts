@@ -11,6 +11,7 @@ export const movies: Movie[] = [
     overview:
       "A sharp-witted detective investigates the death of a wealthy patriarch while every member of his eccentric family looks guilty of something.",
     posterUrl: "https://placehold.co/300x450/1a1a2e/eaeaea?text=Knives+Out",
+    mediaType: "movie",
   },
   {
     id: "la-la-land",
@@ -22,6 +23,7 @@ export const movies: Movie[] = [
     overview:
       "An aspiring actress and a jazz pianist fall in love while chasing their dreams in Los Angeles, where ambition and romance rarely align.",
     posterUrl: "https://placehold.co/300x450/2d1b4e/f5c518?text=La+La+Land",
+    mediaType: "movie",
   },
   {
     id: "get-out",
@@ -33,6 +35,7 @@ export const movies: Movie[] = [
     overview:
       "A young man visits his girlfriend's family estate and slowly realizes their warm hospitality hides something deeply unsettling.",
     posterUrl: "https://placehold.co/300x450/0d2818/c8f7dc?text=Get+Out",
+    mediaType: "movie",
   },
   {
     id: "spider-verse",
@@ -44,6 +47,7 @@ export const movies: Movie[] = [
     overview:
       "Teenager Miles Morales discovers he is one of many Spider-People pulled together to save every dimension from collapse.",
     posterUrl: "https://placehold.co/300x450/1b1464/ff006e?text=Spider-Verse",
+    mediaType: "movie",
   },
   {
     id: "crazy-rich-asians",
@@ -55,6 +59,7 @@ export const movies: Movie[] = [
     overview:
       "An economics professor travels to Singapore with her boyfriend and learns his family is impossibly wealthy—and fiercely protective of tradition.",
     posterUrl: "https://placehold.co/300x450/8b0000/ffd700?text=Crazy+Rich+Asians",
+    mediaType: "movie",
   },
   {
     id: "the-nice-guys",
@@ -66,6 +71,7 @@ export const movies: Movie[] = [
     overview:
       "A down-on-his-luck private eye and a hired enforcer team up in 1970s Los Angeles to find a missing girl and unravel a conspiracy.",
     posterUrl: "https://placehold.co/300x450/3d2b1f/f4a460?text=The+Nice+Guys",
+    mediaType: "movie",
   },
   {
     id: "arrival",
@@ -77,6 +83,7 @@ export const movies: Movie[] = [
     overview:
       "A linguist is recruited to communicate with alien visitors, discovering that language itself may reshape how she understands time and loss.",
     posterUrl: "https://placehold.co/300x450/0a1628/7eb8da?text=Arrival",
+    mediaType: "movie",
   },
   {
     id: "paddington-2",
@@ -88,6 +95,7 @@ export const movies: Movie[] = [
     overview:
       "Paddington's quest to buy the perfect birthday gift for Aunt Lucy leads to a wrongful arrest and a jailbreak adventure full of heart.",
     posterUrl: "https://placehold.co/300x450/003366/cc0000?text=Paddington+2",
+    mediaType: "movie",
   },
   {
     id: "palm-springs",
@@ -99,6 +107,7 @@ export const movies: Movie[] = [
     overview:
       "Two wedding guests stuck in a time loop decide they might as well enjoy the party—until feelings make escaping the loop complicated.",
     posterUrl: "https://placehold.co/300x450/c45c26/f5deb3?text=Palm+Springs",
+    mediaType: "movie",
   },
   {
     id: "game-night",
@@ -110,6 +119,7 @@ export const movies: Movie[] = [
     overview:
       "A couples' game night turns into a real kidnapping mystery, and nobody can tell where the joke ends and the danger begins.",
     posterUrl: "https://placehold.co/300x450/1a1a1a/ff4444?text=Game+Night",
+    mediaType: "movie",
   },
   {
     id: "about-time",
@@ -121,6 +131,7 @@ export const movies: Movie[] = [
     overview:
       "A young man learns he can travel through time and uses the gift to improve his love life—and eventually appreciate ordinary days.",
     posterUrl: "https://placehold.co/300x450/2c5282/e2e8f0?text=About+Time",
+    mediaType: "movie",
   },
   {
     id: "mitchells-vs-machines",
@@ -132,6 +143,7 @@ export const movies: Movie[] = [
     overview:
       "A quirky family's road trip collides with a robot uprising, forcing them to reconnect while saving the world together.",
     posterUrl: "https://placehold.co/300x450/ff6b35/1a1a2e?text=Mitchells",
+    mediaType: "movie",
   },
   {
     id: "shutter-island",
@@ -143,6 +155,7 @@ export const movies: Movie[] = [
     overview:
       "A U.S. Marshal investigates a patient's disappearance at a remote psychiatric hospital and begins to question his own grip on reality.",
     posterUrl: "https://placehold.co/300x450/1c1c1c/8b0000?text=Shutter+Island",
+    mediaType: "movie",
   },
   {
     id: "chef",
@@ -154,6 +167,7 @@ export const movies: Movie[] = [
     overview:
       "After quitting his high-profile restaurant job, a chef starts a food truck and rediscovers creativity, fatherhood, and joy along the way.",
     posterUrl: "https://placehold.co/300x450/f97316/1c1917?text=Chef",
+    mediaType: "movie",
   },
   {
     id: "ex-machina",
@@ -165,6 +179,7 @@ export const movies: Movie[] = [
     overview:
       "A programmer is invited to administer a Turing test to an advanced AI and slowly realizes he may be the one being studied.",
     posterUrl: "https://placehold.co/300x450/0f172a/38bdf8?text=Ex+Machina",
+    mediaType: "movie",
   },
   {
     id: "the-proposal",
@@ -176,6 +191,7 @@ export const movies: Movie[] = [
     overview:
       "A high-powered editor facing deportation convinces her assistant to fake an engagement, then spends a chaotic weekend with his family in Alaska.",
     posterUrl: "https://placehold.co/300x450/b45309/fef3c7?text=The+Proposal",
+    mediaType: "movie",
   },
   {
     id: "zootopia",
@@ -187,6 +203,7 @@ export const movies: Movie[] = [
     overview:
       "An optimistic bunny cop and a cynical fox con artist uncover a conspiracy that threatens the harmony of their animal metropolis.",
     posterUrl: "https://placehold.co/300x450/2563eb/fbbf24?text=Zootopia",
+    mediaType: "movie",
   },
   {
     id: "past-lives",
@@ -198,6 +215,7 @@ export const movies: Movie[] = [
     overview:
       "Childhood friends reunite as adults in New York and wrestle with paths not taken, timing, and the quiet weight of what might have been.",
     posterUrl: "https://placehold.co/300x450/44403c/e7e5e4?text=Past+Lives",
+    mediaType: "movie",
   },
   {
     id: "everything-everywhere",
@@ -209,6 +227,7 @@ export const movies: Movie[] = [
     overview:
       "A laundromat owner is pulled into a multiverse of alternate lives and must save reality while repairing her fractured family.",
     posterUrl: "https://placehold.co/300x450/7c3aed/fbbf24?text=EEAAO",
+    mediaType: "movie",
   },
   {
     id: "sing-street",
@@ -220,5 +239,6 @@ export const movies: Movie[] = [
     overview:
       "In 1980s Dublin, a teenager starts a band to impress a girl and finds an unexpected outlet for hope, music, and self-expression.",
     posterUrl: "https://placehold.co/300x450/1e3a5f/f59e0b?text=Sing+Street",
+    mediaType: "movie",
   },
 ];

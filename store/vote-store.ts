@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { persist } from "zustand/middleware";
 import { createMovieVote } from "@/lib/vote-status";
 import type { MovieVote, VoteValue } from "@/lib/types";
 
@@ -16,29 +17,49 @@ type VoteStore = {
   clearVotes: () => void;
 };
 
-export const useVoteStore = create<VoteStore>((set, get) => ({
-  votes: [],
+function reviveVotes(votes: MovieVote[]): MovieVote[] {
+  return votes.map((vote) => ({
+    ...vote,
+    votedAt: new Date(vote.votedAt),
+  }));
+}
 
-  voteMovie: (collectionId, movieId, vote) =>
-    set((state) => {
-      const nextVote = createMovieVote(collectionId, movieId, vote);
+export const useVoteStore = create<VoteStore>()(
+  persist(
+    (set, get) => ({
+      votes: [],
 
-      return {
-        votes: [
-          ...state.votes.filter(
-            (item) =>
-              item.collectionId !== collectionId || item.movieId !== movieId,
-          ),
-          nextVote,
-        ],
-      };
+      voteMovie: (collectionId, movieId, vote) =>
+        set((state) => {
+          const nextVote = createMovieVote(collectionId, movieId, vote);
+
+          return {
+            votes: [
+              ...state.votes.filter(
+                (item) =>
+                  item.collectionId !== collectionId ||
+                  item.movieId !== movieId,
+              ),
+              nextVote,
+            ],
+          };
+        }),
+
+      getVote: (collectionId, movieId) =>
+        get().votes.find(
+          (vote) =>
+            vote.collectionId === collectionId && vote.movieId === movieId,
+        ),
+
+      clearVotes: () => set({ votes: [] }),
     }),
-
-  getVote: (collectionId, movieId) =>
-    get().votes.find(
-      (vote) =>
-        vote.collectionId === collectionId && vote.movieId === movieId,
-    ),
-
-  clearVotes: () => set({ votes: [] }),
-}));
+    {
+      name: "decision-votes",
+      partialize: (state) => ({ votes: state.votes }),
+      onRehydrateStorage: () => (state) => {
+        if (!state) return;
+        state.votes = reviveVotes(state.votes);
+      },
+    },
+  ),
+);

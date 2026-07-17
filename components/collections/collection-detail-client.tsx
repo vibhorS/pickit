@@ -146,13 +146,12 @@ export function CollectionDetailClient({
             >
               ➕ Add Movie
             </button>
-            <button
-              type="button"
-              onClick={() => setMovieFilter("unrated")}
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-6 py-3.5 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-white/10 sm:w-auto"
+            <Link
+              href={`/rate/${collection.id}`}
+              className="inline-flex w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-6 py-3.5 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-white/10 sm:w-auto"
             >
               ▶️ Continue Rating
-            </button>
+            </Link>
           </div>
         </header>
 

@@ -22,6 +22,13 @@ export function countRatedMovies(
   return movieIds.filter((id) => ratedIds.has(id)).length;
 }
 
+export function isMovieRated(
+  movieId: string,
+  votes: MovieVote[],
+): boolean {
+  return votes.some((vote) => vote.movieId === movieId);
+}
+
 export function createMovieVote(
   collectionId: string,
   movieId: string,
