@@ -3,7 +3,13 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { RecommendationSourceChip } from "@/components/recommendation/recommendation-source-chip";
-import type { Collection, Movie, RecommendationSource, VoteValue } from "@/lib/types";
+import { SwipeableVoteShell } from "@/components/rating/swipeable-vote-shell";
+import type {
+  Collection,
+  Movie,
+  RecommendationSource,
+  VoteValue,
+} from "@/lib/types";
 import { useVoteStore } from "@/store/vote-store";
 
 type MovieDetailClientProps = {
@@ -62,7 +68,27 @@ export function MovieDetailClient({
         </Link>
       </div>
 
-      <article className="overflow-hidden rounded-3xl border border-white/5 bg-netflix-surface shadow-[0_16px_48px_rgba(0,0,0,0.55)]">
+      <SwipeableVoteShell
+        onVote={handleVote}
+        footer={(vote) => (
+          <div className="flex flex-col gap-3 px-6 pb-6 sm:flex-row sm:px-10 sm:pb-8">
+            <button
+              type="button"
+              onClick={() => vote("pass")}
+              className="w-full rounded-xl border border-white/10 bg-white/5 px-6 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors duration-200 hover:bg-white/10 sm:flex-1"
+            >
+              ❌ Not for Me
+            </button>
+            <button
+              type="button"
+              onClick={() => vote("like")}
+              className="w-full rounded-xl bg-netflix-red px-6 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors duration-200 hover:bg-netflix-red-hover sm:flex-1"
+            >
+              ❤️ I&apos;d Watch
+            </button>
+          </div>
+        )}
+      >
         <div className="relative aspect-[2/3] w-full overflow-hidden bg-black sm:aspect-[16/9]">
           {movie.posterUrl ? (
             <img
@@ -116,25 +142,8 @@ export function MovieDetailClient({
               {movie.overview || "No overview available."}
             </p>
           </div>
-
-          <div className="mt-2 flex flex-col gap-3 border-t border-white/10 pt-6 sm:flex-row">
-            <button
-              type="button"
-              onClick={() => handleVote("pass")}
-              className="w-full rounded-xl border border-white/10 bg-white/5 px-6 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-white/10 sm:flex-1"
-            >
-              ❌ Not for Me
-            </button>
-            <button
-              type="button"
-              onClick={() => handleVote("like")}
-              className="w-full rounded-xl bg-netflix-red px-6 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-netflix-red-hover sm:flex-1"
-            >
-              ❤️ I&apos;d Watch
-            </button>
-          </div>
         </div>
-      </article>
+      </SwipeableVoteShell>
     </div>
   );
 }

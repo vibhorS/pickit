@@ -101,8 +101,7 @@ export function RateSession({ collection, items }: RateSessionProps) {
           key={current.movie.id}
           movie={current.movie}
           source={current.source}
-          onLike={() => handleVote("like")}
-          onPass={() => handleVote("pass")}
+          onVote={handleVote}
         />
       )}
     </div>

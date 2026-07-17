@@ -1,11 +1,13 @@
-import type { Movie, RecommendationSource } from "@/lib/types";
+"use client";
+
 import { RecommendationSourceChip } from "@/components/recommendation/recommendation-source-chip";
+import { SwipeableVoteShell } from "@/components/rating/swipeable-vote-shell";
+import type { Movie, RecommendationSource, VoteValue } from "@/lib/types";
 
 type RateMovieCardProps = {
   movie: Movie;
   source: RecommendationSource;
-  onLike: () => void;
-  onPass: () => void;
+  onVote: (vote: VoteValue) => void;
 };
 
 function StarIcon() {
@@ -28,12 +30,7 @@ function formatRuntime(minutes: number): string {
   return `${hours}h ${mins}m`;
 }
 
-export function RateMovieCard({
-  movie,
-  source,
-  onLike,
-  onPass,
-}: RateMovieCardProps) {
+export function RateMovieCard({ movie, source, onVote }: RateMovieCardProps) {
   const metaParts = [
     movie.year > 0 ? String(movie.year) : null,
     `TMDb ${movie.rating.toFixed(1)}`,
@@ -41,7 +38,27 @@ export function RateMovieCard({
   ].filter(Boolean);
 
   return (
-    <article className="mx-auto flex w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/5 bg-netflix-surface shadow-[0_8px_30px_rgba(0,0,0,0.45)]">
+    <SwipeableVoteShell
+      onVote={onVote}
+      footer={(vote) => (
+        <div className="flex flex-col gap-3 px-5 pb-5 sm:flex-row sm:px-6 sm:pb-6">
+          <button
+            type="button"
+            onClick={() => vote("pass")}
+            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors duration-200 hover:bg-white/10 sm:flex-1"
+          >
+            ❌ Not for Me
+          </button>
+          <button
+            type="button"
+            onClick={() => vote("like")}
+            className="w-full rounded-xl bg-netflix-red px-4 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors duration-200 hover:bg-netflix-red-hover sm:flex-1"
+          >
+            ❤️ I&apos;d Watch
+          </button>
+        </div>
+      )}
+    >
       <div className="relative aspect-[2/3] w-full overflow-hidden bg-black sm:aspect-[3/4]">
         {movie.posterUrl ? (
           <img
@@ -89,24 +106,7 @@ export function RateMovieCard({
         <p className="line-clamp-3 text-sm leading-relaxed text-netflix-muted">
           {movie.overview || "No overview available."}
         </p>
-
-        <div className="mt-1 flex flex-col gap-3 sm:flex-row">
-          <button
-            type="button"
-            onClick={onPass}
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-white/10 sm:flex-1"
-          >
-            ❌ Not for Me
-          </button>
-          <button
-            type="button"
-            onClick={onLike}
-            className="w-full rounded-xl bg-netflix-red px-4 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-netflix-red-hover sm:flex-1"
-          >
-            ❤️ I&apos;d Watch
-          </button>
-        </div>
       </div>
-    </article>
+    </SwipeableVoteShell>
   );
 }
