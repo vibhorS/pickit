@@ -1,4 +1,20 @@
-import type { Collection } from "@/lib/types";
+import { TMDB_SEARCH_SOURCE } from "@/lib/recommendation-source";
+import type { Collection, RecommendationSource } from "@/lib/types";
+
+const friendSource: RecommendationSource = {
+  type: "friend",
+  label: "Friend",
+};
+
+const letterboxdSource: RecommendationSource = {
+  type: "letterboxd",
+  label: "Letterboxd",
+};
+
+const redditSource: RecommendationSource = {
+  type: "reddit",
+  label: "Reddit",
+};
 
 export const collections: Collection[] = [
   {
@@ -6,18 +22,23 @@ export const collections: Collection[] = [
     name: "Date Night",
     emoji: "💕",
     shared: true,
-    movieIds: ["la-la-land", "about-time", "palm-springs", "the-proposal"],
+    items: [
+      { movieId: "la-la-land", source: TMDB_SEARCH_SOURCE },
+      { movieId: "about-time", source: friendSource },
+      { movieId: "palm-springs", source: letterboxdSource },
+      { movieId: "the-proposal", source: TMDB_SEARCH_SOURCE },
+    ],
   },
   {
     id: "sci-fi",
     name: "Sci-Fi",
     emoji: "🚀",
     shared: false,
-    movieIds: [
-      "arrival",
-      "ex-machina",
-      "everything-everywhere",
-      "spider-verse",
+    items: [
+      { movieId: "arrival", source: TMDB_SEARCH_SOURCE },
+      { movieId: "ex-machina", source: redditSource },
+      { movieId: "everything-everywhere", source: friendSource },
+      { movieId: "spider-verse", source: letterboxdSource },
     ],
   },
   {
@@ -25,12 +46,12 @@ export const collections: Collection[] = [
     name: "Comfort Movies",
     emoji: "🛋️",
     shared: true,
-    movieIds: [
-      "paddington-2",
-      "chef",
-      "sing-street",
-      "zootopia",
-      "crazy-rich-asians",
+    items: [
+      { movieId: "paddington-2", source: TMDB_SEARCH_SOURCE },
+      { movieId: "chef", source: friendSource },
+      { movieId: "sing-street", source: letterboxdSource },
+      { movieId: "zootopia", source: TMDB_SEARCH_SOURCE },
+      { movieId: "crazy-rich-asians", source: redditSource },
     ],
   },
 ];

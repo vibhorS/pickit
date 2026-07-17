@@ -9,4 +9,8 @@ export const collectionService = {
   getById(id: string): Collection | undefined {
     return collections.find((collection) => collection.id === id);
   },
+
+  getMovieIds(collection: Collection): string[] {
+    return collection.items.map((item) => item.movieId);
+  },
 };

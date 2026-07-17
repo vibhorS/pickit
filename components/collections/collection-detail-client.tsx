@@ -6,13 +6,15 @@ import { AddMovieModal } from "@/components/collections/add-movie-modal";
 import { MovieDetailDrawer } from "@/components/movie/movie-detail-drawer";
 import { MovieGridCard } from "@/components/movie/movie-grid-card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { TMDB_SEARCH_SOURCE } from "@/lib/recommendation-source";
+import type { CollectionMovie } from "@/lib/services/movie-service";
 import { countRatedMovies } from "@/lib/vote-status";
-import type { Collection, Movie } from "@/lib/types";
+import type { Collection, Movie, VoteValue } from "@/lib/types";
 import { useVoteStore } from "@/store/vote-store";
 
 type CollectionDetailClientProps = {
   collection: Collection;
-  initialMovies: Movie[];
+  initialItems: CollectionMovie[];
 };
 
 type SummaryCardProps = {
@@ -37,29 +39,30 @@ type MovieFilter = "all" | "unrated";
 
 export function CollectionDetailClient({
   collection,
-  initialMovies,
+  initialItems,
 }: CollectionDetailClientProps) {
-  const [movies, setMovies] = useState(initialMovies);
+  const [items, setItems] = useState(initialItems);
   const [isAddMovieOpen, setIsAddMovieOpen] = useState(false);
   const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [movieFilter, setMovieFilter] = useState<MovieFilter>("all");
 
   const votes = useVoteStore((state) => state.votes);
-
-  const movieIds = movies.map((movie) => movie.id);
-  const totalMovies = movies.length;
-  const moviesYouveRated = countRatedMovies(movieIds, votes);
-  const remainingToRate = Math.max(totalMovies - moviesYouveRated, 0);
-
-  const unratedMovies = movies.filter(
-    (movie) => !votes.some((vote) => vote.movieId === movie.id),
+  const voteMovie = useVoteStore((state) => state.voteMovie);
+  const collectionVotes = votes.filter(
+    (vote) => vote.collectionId === collection.id,
   );
-  const visibleMovies = movieFilter === "unrated" ? unratedMovies : movies;
 
-  const tonightsPicks = movies.filter((movie) =>
-    votes.some((vote) => vote.movieId === movie.id && vote.vote === "like"),
+  const movieIds = items.map((item) => item.movie.id);
+  const totalMovies = items.length;
+  const moviesRated = countRatedMovies(movieIds, collectionVotes);
+  const remaining = Math.max(totalMovies - moviesRated, 0);
+
+  const unratedItems = items.filter(
+    (item) =>
+      !collectionVotes.some((vote) => vote.movieId === item.movie.id),
   );
+  const visibleItems = movieFilter === "unrated" ? unratedItems : items;
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -72,20 +75,26 @@ export function CollectionDetailClient({
   }, [toastMessage]);
 
   function handleAddMovie(movie: Movie) {
-    setMovies((current) => {
-      if (current.some((item) => item.id === movie.id)) {
+    setItems((current) => {
+      if (current.some((item) => item.movie.id === movie.id)) {
         return current;
       }
-      return [...current, movie];
+      return [...current, { movie, source: TMDB_SEARCH_SOURCE }];
     });
     setIsAddMovieOpen(false);
     setToastMessage(`Added to ${collection.name} ❤️`);
   }
 
   function handleRemoveMovie(movieId: string) {
-    setMovies((current) => current.filter((movie) => movie.id !== movieId));
+    setItems((current) =>
+      current.filter((item) => item.movie.id !== movieId),
+    );
     setSelectedMovie(null);
     setToastMessage(`Removed from ${collection.name}`);
+  }
+
+  function handleVote(movieId: string, vote: VoteValue) {
+    voteMovie(collection.id, movieId, vote);
   }
 
   return (
@@ -149,8 +158,8 @@ export function CollectionDetailClient({
 
         <section className="mt-8 grid grid-cols-1 gap-3 sm:mt-10 sm:grid-cols-3 sm:gap-4">
           <SummaryCard label="Total Movies" value={totalMovies} />
-          <SummaryCard label="Movies You've Rated" value={moviesYouveRated} />
-          <SummaryCard label="Remaining to Rate" value={remainingToRate} />
+          <SummaryCard label="Movies Rated" value={moviesRated} />
+          <SummaryCard label="Remaining" value={remaining} />
         </section>
 
         {totalMovies === 0 ? (
@@ -174,7 +183,7 @@ export function CollectionDetailClient({
                     Movies
                   </h2>
                   <p className="mt-1 text-sm text-netflix-muted">
-                    Rate movies anytime — your partner can catch up later.
+                    Rate movies whenever you&apos;re ready.
                   </p>
                 </div>
 
@@ -208,7 +217,7 @@ export function CollectionDetailClient({
                 </div>
               </div>
 
-              {visibleMovies.length === 0 ? (
+              {visibleItems.length === 0 ? (
                 <EmptyState
                   emoji="✅"
                   title="You're caught up"
@@ -220,39 +229,17 @@ export function CollectionDetailClient({
                 />
               ) : (
                 <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
-                  {visibleMovies.map((movie) => (
+                  {visibleItems.map(({ movie, source }) => (
                     <MovieGridCard
                       key={movie.id}
                       movie={movie}
-                      onOpen={setSelectedMovie}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="mt-10 sm:mt-12">
-              <div className="mb-5">
-                <h2 className="text-xl font-bold text-white sm:text-2xl">
-                  Tonight&apos;s Picks
-                </h2>
-                <p className="mt-1 text-sm text-netflix-muted">
-                  Movies you&apos;d watch from this collection.
-                </p>
-              </div>
-
-              {tonightsPicks.length === 0 ? (
-                <EmptyState
-                  emoji="🍿"
-                  title="No picks yet"
-                  description="Mark I'd Watch on movies you like and they'll show up here."
-                />
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
-                  {tonightsPicks.map((movie) => (
-                    <MovieGridCard
-                      key={movie.id}
-                      movie={movie}
+                      source={source}
+                      vote={
+                        collectionVotes.find(
+                          (vote) => vote.movieId === movie.id,
+                        )?.vote
+                      }
+                      onVote={handleVote}
                       onOpen={setSelectedMovie}
                     />
                   ))}
@@ -265,7 +252,7 @@ export function CollectionDetailClient({
 
       <AddMovieModal
         open={isAddMovieOpen}
-        existingMovieIds={movies.map((movie) => movie.id)}
+        existingMovieIds={items.map((item) => item.movie.id)}
         onClose={() => setIsAddMovieOpen(false)}
         onAdd={handleAddMovie}
       />

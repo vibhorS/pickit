@@ -42,6 +42,22 @@ export type BucketItem = {
 };
 
 // ======================
+// Recommendation source
+// ======================
+// Incremental step toward collections storing Recommendations
+// (movie + discovery context). Keep Movie unchanged for now.
+
+export type RecommendationSource = {
+  type: string;
+  label: string;
+};
+
+export type CollectionItem = {
+  movieId: string;
+  source: RecommendationSource;
+};
+
+// ======================
 // Collection
 // ======================
 
@@ -50,7 +66,7 @@ export type Collection = {
   name: string;
   emoji: string;
   shared: boolean;
-  movieIds: string[];
+  items: CollectionItem[];
 };
 
 // ======================
@@ -60,6 +76,7 @@ export type Collection = {
 export type VoteValue = "like" | "pass";
 
 export type MovieVote = {
+  collectionId: string;
   movieId: string;
   vote: VoteValue;
   votedAt: Date;

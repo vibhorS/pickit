@@ -16,7 +16,9 @@ export default async function DecisionPage({ params }: DecisionPageProps) {
     notFound();
   }
 
-  const movies = movieService.getMoviesByIds(collection.movieIds);
+  const movies = movieService.getMoviesByIds(
+    collectionService.getMovieIds(collection),
+  );
 
   return (
     <PageShell wide top>

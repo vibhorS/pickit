@@ -1,7 +1,7 @@
 import type { MovieVote, VoteValue } from "@/lib/types";
 
 /**
- * Local votes are attached to movies by movieId.
+ * Local votes are scoped to a movie within a collection.
  * Partner/match states can layer on later once multi-user votes exist.
  */
 
@@ -23,10 +23,12 @@ export function countRatedMovies(
 }
 
 export function createMovieVote(
+  collectionId: string,
   movieId: string,
   vote: VoteValue,
 ): MovieVote {
   return {
+    collectionId,
     movieId,
     vote,
     votedAt: new Date(),

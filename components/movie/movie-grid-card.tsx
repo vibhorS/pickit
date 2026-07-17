@@ -1,11 +1,14 @@
 "use client";
 
 import type { MouseEvent } from "react";
-import type { Movie, VoteValue } from "@/lib/types";
-import { useVoteStore } from "@/store/vote-store";
+import { RecommendationSourceChip } from "@/components/recommendation/recommendation-source-chip";
+import type { Movie, RecommendationSource, VoteValue } from "@/lib/types";
 
 type MovieGridCardProps = {
   movie: Movie;
+  source: RecommendationSource;
+  vote?: VoteValue;
+  onVote: (movieId: string, vote: VoteValue) => void;
   onOpen?: (movie: Movie) => void;
 };
 
@@ -21,15 +24,16 @@ function StarIcon() {
   );
 }
 
-export function MovieGridCard({ movie, onOpen }: MovieGridCardProps) {
-  const vote = useVoteStore((state) =>
-    state.votes.find((item) => item.movieId === movie.id),
-  );
-  const voteMovie = useVoteStore((state) => state.voteMovie);
-
+export function MovieGridCard({
+  movie,
+  source,
+  vote,
+  onVote,
+  onOpen,
+}: MovieGridCardProps) {
   function handleVote(nextVote: VoteValue, event: MouseEvent) {
     event.stopPropagation();
-    voteMovie(movie.id, nextVote);
+    onVote(movie.id, nextVote);
   }
 
   return (
@@ -67,11 +71,13 @@ export function MovieGridCard({ movie, onOpen }: MovieGridCardProps) {
         )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/10 to-transparent" />
 
-        {!vote && (
-          <span className="absolute left-3 top-3 rounded-full bg-white/10 px-2.5 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-netflix-muted backdrop-blur-sm">
-            Not Rated
-          </span>
-        )}
+        <span className="absolute left-3 top-3 rounded-full bg-black/75 px-2.5 py-1 text-[0.6875rem] font-semibold uppercase tracking-wide text-white backdrop-blur-sm">
+          {vote === "like"
+            ? "❤️ I'd Watch"
+            : vote === "pass"
+              ? "❌ Not for Me"
+              : "Not Rated"}
+        </span>
 
         <span className="absolute bottom-3 left-3 inline-flex items-center gap-1 rounded-md bg-black/75 px-2 py-1 text-xs font-semibold text-amber-400 backdrop-blur-sm">
           <StarIcon />
@@ -80,13 +86,16 @@ export function MovieGridCard({ movie, onOpen }: MovieGridCardProps) {
       </div>
 
       <div className="flex flex-1 flex-col gap-2.5 p-3 sm:p-4">
-        <div className="space-y-1">
-          <h2 className="line-clamp-2 text-sm font-bold leading-snug tracking-tight text-white sm:text-base">
-            {movie.title}
-          </h2>
-          <p className="text-xs font-medium text-netflix-muted sm:text-sm">
-            {movie.year > 0 ? movie.year : "—"}
-          </p>
+        <div className="space-y-1.5">
+          <div className="space-y-1">
+            <h2 className="line-clamp-2 text-sm font-bold leading-snug tracking-tight text-white sm:text-base">
+              {movie.title}
+            </h2>
+            <p className="text-xs font-medium text-netflix-muted sm:text-sm">
+              {movie.year > 0 ? movie.year : "—"}
+            </p>
+          </div>
+          <RecommendationSourceChip type={source.type} label={source.label} />
         </div>
 
         {movie.genres.length > 0 && (
@@ -103,32 +112,32 @@ export function MovieGridCard({ movie, onOpen }: MovieGridCardProps) {
         )}
 
         <div className="mt-auto pt-1">
-          {!vote ? (
-            <div className="flex flex-col gap-2">
-              <button
-                type="button"
-                onClick={(event) => handleVote("like", event)}
-                className="w-full rounded-lg bg-netflix-red px-3 py-2 text-xs font-bold uppercase tracking-wide text-white transition-colors hover:bg-netflix-red-hover"
-              >
-                ❤️ I&apos;d Watch
-              </button>
-              <button
-                type="button"
-                onClick={(event) => handleVote("pass", event)}
-                className="w-full rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-xs font-bold uppercase tracking-wide text-white transition-colors hover:bg-white/10"
-              >
-                ❌ Pass
-              </button>
-            </div>
-          ) : vote.vote === "like" ? (
-            <span className="inline-flex w-full items-center justify-center rounded-lg bg-netflix-red/15 px-3 py-2 text-xs font-bold uppercase tracking-wide text-netflix-red">
-              ❤️ You&apos;d Watch
-            </span>
-          ) : (
-            <span className="inline-flex w-full items-center justify-center rounded-lg bg-white/10 px-3 py-2 text-xs font-bold uppercase tracking-wide text-netflix-muted">
-              ❌ Passed
-            </span>
-          )}
+          <div className="flex flex-col gap-2">
+            <button
+              type="button"
+              aria-pressed={vote === "like"}
+              onClick={(event) => handleVote("like", event)}
+              className={`w-full rounded-lg px-3 py-2 text-xs font-bold uppercase tracking-wide text-white transition-colors ${
+                vote === "like"
+                  ? "bg-netflix-red"
+                  : "border border-white/10 bg-white/5 hover:bg-white/10"
+              }`}
+            >
+              ❤️ I&apos;d Watch
+            </button>
+            <button
+              type="button"
+              aria-pressed={vote === "pass"}
+              onClick={(event) => handleVote("pass", event)}
+              className={`w-full rounded-lg border px-3 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
+                vote === "pass"
+                  ? "border-white/30 bg-white/15 text-white"
+                  : "border-white/10 bg-white/5 text-netflix-muted hover:bg-white/10 hover:text-white"
+              }`}
+            >
+              ❌ Not for Me
+            </button>
+          </div>
         </div>
       </div>
     </article>

@@ -1,9 +1,14 @@
 import { movies } from "@/lib/mock-data";
-import type { Movie } from "@/lib/types";
+import type { CollectionItem, Movie, RecommendationSource } from "@/lib/types";
 import {
   tmdbService,
   type TmdbSearchMovie,
 } from "@/lib/services/tmdb-service";
+
+export type CollectionMovie = {
+  movie: Movie;
+  source: RecommendationSource;
+};
 
 function mapTmdbMovieToMovie(movie: TmdbSearchMovie): Movie {
   return {
@@ -31,6 +36,14 @@ export const movieService = {
     return ids
       .map((id) => movies.find((movie) => movie.id === id))
       .filter((movie): movie is Movie => movie !== undefined);
+  },
+
+  getCollectionMovies(items: CollectionItem[]): CollectionMovie[] {
+    return items.flatMap((item) => {
+      const movie = movies.find((entry) => entry.id === item.movieId);
+      if (!movie) return [];
+      return [{ movie, source: item.source }];
+    });
   },
 
   async search(query: string): Promise<Movie[]> {

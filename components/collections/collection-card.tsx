@@ -6,7 +6,7 @@ type CollectionCardProps = {
 };
 
 export function CollectionCard({ collection }: CollectionCardProps) {
-  const movieCount = collection.movieIds.length;
+  const movieCount = collection.items.length;
   const movieLabel = movieCount === 1 ? "1 movie" : `${movieCount} movies`;
 
   return (

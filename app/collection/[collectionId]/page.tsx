@@ -16,13 +16,13 @@ export default async function CollectionPage({ params }: CollectionPageProps) {
     notFound();
   }
 
-  const movies = movieService.getMoviesByIds(collection.movieIds);
+  const initialItems = movieService.getCollectionMovies(collection.items);
 
   return (
     <PageShell wide top>
       <CollectionDetailClient
         collection={collection}
-        initialMovies={movies}
+        initialItems={initialItems}
       />
     </PageShell>
   );
