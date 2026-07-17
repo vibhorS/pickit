@@ -21,13 +21,7 @@ export const mockPartnerVotes: MovieVote[] = [
     vote: "like",
     votedAt: new Date("2026-01-10"),
   },
-  {
-    collectionId: "date-night",
-    movieId: "palm-springs",
-    userId: PARTNER_USER.id,
-    vote: "pass",
-    votedAt: new Date("2026-01-10"),
-  },
+  // palm-springs intentionally unrated by partner → "Waiting for ratings"
   {
     collectionId: "date-night",
     movieId: "the-proposal",

@@ -1,12 +1,14 @@
 "use client";
 
 import { RecommendationSourceChip } from "@/components/recommendation/recommendation-source-chip";
+import { getVoteGlyph } from "@/lib/match-engine";
 import type { Movie, RecommendationSource, VoteValue } from "@/lib/types";
 
 type MovieGridCardProps = {
   movie: Movie;
   source: RecommendationSource;
   vote?: VoteValue;
+  partnerVote?: VoteValue;
   onOpen?: (movie: Movie) => void;
 };
 
@@ -14,11 +16,16 @@ export function MovieGridCard({
   movie,
   source,
   vote,
+  partnerVote,
   onOpen,
 }: MovieGridCardProps) {
   const isWatch = vote === "like";
   const isPass = vote === "pass";
   const isNew = !vote;
+  const isMutual = vote === "like" && partnerVote === "like";
+  const mineGlyph = getVoteGlyph(vote);
+  const partnerGlyph = getVoteGlyph(partnerVote);
+  const pairLabel = `${mineGlyph}${partnerGlyph}`;
 
   return (
     <article
@@ -43,11 +50,13 @@ export function MovieGridCard({
     >
       <div
         className={`relative aspect-[2/3] w-full overflow-hidden rounded-xl bg-netflix-elevated transition-shadow duration-300 group-hover:shadow-[0_16px_36px_rgba(0,0,0,0.5)] ${
-          isWatch
-            ? "ring-1 ring-emerald-400/35 shadow-[0_8px_24px_rgba(16,185,129,0.12)]"
-            : isPass
-              ? "shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
-              : "shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
+          isMutual
+            ? "ring-1 ring-rose-400/30 shadow-[0_8px_24px_rgba(244,63,94,0.12)]"
+            : isWatch
+              ? "ring-1 ring-emerald-400/30 shadow-[0_8px_24px_rgba(16,185,129,0.1)]"
+              : isPass
+                ? "shadow-[0_8px_24px_rgba(0,0,0,0.28)]"
+                : "shadow-[0_8px_24px_rgba(0,0,0,0.35)]"
         }`}
       >
         {movie.posterUrl ? (
@@ -73,24 +82,6 @@ export function MovieGridCard({
             New
           </span>
         )}
-
-        {isWatch && (
-          <span
-            aria-label="I'd Watch"
-            className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-emerald-500/90 text-sm text-white shadow-sm backdrop-blur-sm"
-          >
-            ✓
-          </span>
-        )}
-
-        {isPass && (
-          <span
-            aria-label="Not for Me"
-            className="absolute right-2.5 top-2.5 flex h-7 w-7 items-center justify-center rounded-full bg-white/15 text-xs text-white/70 backdrop-blur-sm"
-          >
-            ✕
-          </span>
-        )}
       </div>
 
       <div className="flex flex-1 flex-col gap-1.5 pt-3.5">
@@ -98,20 +89,21 @@ export function MovieGridCard({
           {movie.title}
         </h2>
         <RecommendationSourceChip type={source.type} label={source.label} />
-        <p className="text-[0.6875rem] text-netflix-muted/70">
-          {movie.rating.toFixed(1)}
-        </p>
-        <p
-          className={`text-[0.625rem] font-medium ${
-            isWatch
-              ? "text-emerald-400/85"
-              : isPass
-                ? "text-netflix-muted/55"
-                : "text-emerald-300/70"
-          }`}
-        >
-          {isWatch ? "❤️ I'd Watch" : isPass ? "❌ Not for Me" : "🟢 New"}
-        </p>
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[0.6875rem] text-netflix-muted/70">
+            {movie.rating.toFixed(1)}
+          </p>
+          <p
+            aria-label={`You ${mineGlyph}, partner ${partnerGlyph}`}
+            className={`text-[0.75rem] tracking-tight ${
+              isMutual
+                ? "text-rose-300/90"
+                : "text-netflix-muted/65"
+            }`}
+          >
+            {pairLabel}
+          </p>
+        </div>
       </div>
     </article>
   );
