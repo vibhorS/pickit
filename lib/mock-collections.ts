@@ -21,6 +21,7 @@ export const collections: Collection[] = [
     id: "date-night",
     name: "Date Night",
     emoji: "💕",
+    description: "Movies we've saved for our next movie night.",
     shared: true,
     items: [
       { movieId: "la-la-land", source: TMDB_SEARCH_SOURCE },
@@ -33,6 +34,7 @@ export const collections: Collection[] = [
     id: "sci-fi",
     name: "Sci-Fi",
     emoji: "🚀",
+    description: "Mind-bending worlds, big ideas, and late-night rabbit holes.",
     shared: false,
     items: [
       { movieId: "arrival", source: TMDB_SEARCH_SOURCE },
@@ -45,6 +47,7 @@ export const collections: Collection[] = [
     id: "comfort-movies",
     name: "Comfort Movies",
     emoji: "🛋️",
+    description: "Feel-good titles for rainy evenings and rewatch Sundays.",
     shared: true,
     items: [
       { movieId: "paddington-2", source: TMDB_SEARCH_SOURCE },

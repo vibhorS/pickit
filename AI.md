@@ -9,31 +9,20 @@ The first category is movies.
 ## Core Principles
 
 - Capture should take under 10 seconds.
-
 - Users discover continuously.
-
 - Users decide occasionally.
-
 - Build shared taste over time.
-
 - Never ask users to retype information they already have.
-
 - Optimize for reducing decision fatigue.
 
 ## Engineering Principles
 
 - Keep components presentational.
-
 - Business logic belongs in services/stores.
-
 - Prefer composition over giant reusable components.
-
 - Prefer simple code over clever code.
-
 - Avoid premature abstractions.
-
 - One feature per PR.
-
 - Keep Cursor changes focused.
 
 ## Stack
@@ -76,4 +65,20 @@ Trips
 
 Recipes
 
-Groups
+Groups  
+  
+## Design Principles
+
+- Build a premium consumer app, not an internal dashboard.
+
+- Every screen should have exactly one primary action.
+
+- Prefer whitespace over borders.
+
+- Prefer typography over badges.
+
+- Reduce visual noise relentlessly.
+
+- If a UI element doesn't help users decide what to do next, question whether it should exist.
+
+- Optimize for delight and calm, not density.

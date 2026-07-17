@@ -93,17 +93,17 @@ export function RateMovieCard({
         <div className="mt-1 flex flex-col gap-3 sm:flex-row">
           <button
             type="button"
-            onClick={onLike}
-            className="w-full rounded-xl bg-netflix-red px-4 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-netflix-red-hover sm:flex-1"
-          >
-            ❤️ I&apos;d Watch
-          </button>
-          <button
-            type="button"
             onClick={onPass}
             className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-white/10 sm:flex-1"
           >
             ❌ Not for Me
+          </button>
+          <button
+            type="button"
+            onClick={onLike}
+            className="w-full rounded-xl bg-netflix-red px-4 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-netflix-red-hover sm:flex-1"
+          >
+            ❤️ I&apos;d Watch
           </button>
         </div>
       </div>

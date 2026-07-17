@@ -69,6 +69,7 @@ export type Collection = {
   id: string;
   name: string;
   emoji: string;
+  description?: string;
   shared: boolean;
   items: CollectionItem[];
 };
@@ -82,6 +83,7 @@ export type VoteValue = "like" | "pass";
 export type MovieVote = {
   collectionId: string;
   movieId: string;
+  userId: string;
   vote: VoteValue;
   votedAt: Date;
 };

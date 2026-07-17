@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { createMovieVote } from "@/lib/vote-status";
+import { CURRENT_USER } from "@/lib/users";
 import type { MovieVote, VoteValue } from "@/lib/types";
 
 type VoteStore = {
@@ -20,6 +21,7 @@ type VoteStore = {
 function reviveVotes(votes: MovieVote[]): MovieVote[] {
   return votes.map((vote) => ({
     ...vote,
+    userId: vote.userId ?? CURRENT_USER.id,
     votedAt: new Date(vote.votedAt),
   }));
 }
@@ -31,14 +33,20 @@ export const useVoteStore = create<VoteStore>()(
 
       voteMovie: (collectionId, movieId, vote) =>
         set((state) => {
-          const nextVote = createMovieVote(collectionId, movieId, vote);
+          const nextVote = createMovieVote(
+            collectionId,
+            movieId,
+            vote,
+            CURRENT_USER.id,
+          );
 
           return {
             votes: [
               ...state.votes.filter(
                 (item) =>
                   item.collectionId !== collectionId ||
-                  item.movieId !== movieId,
+                  item.movieId !== movieId ||
+                  item.userId !== CURRENT_USER.id,
               ),
               nextVote,
             ],
@@ -48,7 +56,9 @@ export const useVoteStore = create<VoteStore>()(
       getVote: (collectionId, movieId) =>
         get().votes.find(
           (vote) =>
-            vote.collectionId === collectionId && vote.movieId === movieId,
+            vote.collectionId === collectionId &&
+            vote.movieId === movieId &&
+            vote.userId === CURRENT_USER.id,
         ),
 
       clearVotes: () => set({ votes: [] }),

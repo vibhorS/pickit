@@ -8,6 +8,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import type { CollectionMovie } from "@/lib/services/movie-service";
 import { countRatedMovies, isMovieRated } from "@/lib/vote-status";
 import type { Collection, VoteValue } from "@/lib/types";
+import { CURRENT_USER } from "@/lib/users";
 import { useVoteStore } from "@/store/vote-store";
 
 type RateSessionProps = {
@@ -33,7 +34,8 @@ export function RateSession({ collection, items }: RateSessionProps) {
   }, []);
 
   const collectionVotes = votes.filter(
-    (vote) => vote.collectionId === collection.id,
+    (vote) =>
+      vote.collectionId === collection.id && vote.userId === CURRENT_USER.id,
   );
   const movieIds = items.map((item) => item.movie.id);
   const total = items.length;

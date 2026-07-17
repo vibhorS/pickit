@@ -1,8 +1,9 @@
 import type { MovieVote, VoteValue } from "@/lib/types";
+import { CURRENT_USER } from "@/lib/users";
 
 /**
- * Local votes are scoped to a movie within a collection.
- * Partner/match states can layer on later once multi-user votes exist.
+ * Votes are scoped to (collectionId, movieId, userId).
+ * Local interactive votes always belong to CURRENT_USER.
  */
 
 export type LocalVoteState = "not-rated" | "like" | "pass";
@@ -33,11 +34,25 @@ export function createMovieVote(
   collectionId: string,
   movieId: string,
   vote: VoteValue,
+  userId: string = CURRENT_USER.id,
 ): MovieVote {
   return {
     collectionId,
     movieId,
+    userId,
     vote,
     votedAt: new Date(),
   };
+}
+
+export function votesForUser(
+  votes: MovieVote[],
+  userId: string,
+  collectionId?: string,
+): MovieVote[] {
+  return votes.filter(
+    (vote) =>
+      vote.userId === userId &&
+      (collectionId === undefined || vote.collectionId === collectionId),
+  );
 }

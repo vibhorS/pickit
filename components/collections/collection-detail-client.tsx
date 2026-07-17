@@ -1,15 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AddMovieModal } from "@/components/collections/add-movie-modal";
-import { MovieDetailDrawer } from "@/components/movie/movie-detail-drawer";
 import { MovieGridCard } from "@/components/movie/movie-grid-card";
-import { EmptyState } from "@/components/ui/empty-state";
 import { TMDB_SEARCH_SOURCE } from "@/lib/recommendation-source";
 import type { CollectionMovie } from "@/lib/services/movie-service";
 import { countRatedMovies } from "@/lib/vote-status";
-import type { Collection, Movie, VoteValue } from "@/lib/types";
+import type { Collection, Movie } from "@/lib/types";
+import { CURRENT_USER } from "@/lib/users";
 import { useVoteStore } from "@/store/vote-store";
 
 type CollectionDetailClientProps = {
@@ -17,52 +17,58 @@ type CollectionDetailClientProps = {
   initialItems: CollectionMovie[];
 };
 
-type SummaryCardProps = {
+type StatCardProps = {
   label: string;
-  value: number | string;
+  value: number;
 };
 
-function SummaryCard({ label, value }: SummaryCardProps) {
+function StatCard({ label, value }: StatCardProps) {
   return (
-    <div className="rounded-2xl border border-white/5 bg-netflix-surface px-4 py-4 shadow-[0_8px_24px_rgba(0,0,0,0.35)] sm:px-5">
-      <p className="text-xs font-semibold uppercase tracking-wide text-netflix-muted">
+    <div className="rounded-xl bg-white/[0.03] px-3 py-3 sm:px-4 sm:py-3.5">
+      <p className="text-[0.6875rem] font-medium uppercase tracking-wide text-netflix-muted/80">
         {label}
       </p>
-      <p className="mt-2 text-2xl font-black tracking-tight text-white sm:text-3xl">
+      <p className="mt-1 text-2xl font-semibold tracking-tight text-white sm:text-[1.75rem]">
         {value}
       </p>
     </div>
   );
 }
 
-type MovieFilter = "all" | "unrated";
+type MovieFilter = "all" | "rated";
 
 export function CollectionDetailClient({
   collection,
   initialItems,
 }: CollectionDetailClientProps) {
+  const router = useRouter();
   const [items, setItems] = useState(initialItems);
   const [isAddMovieOpen, setIsAddMovieOpen] = useState(false);
-  const [selectedMovie, setSelectedMovie] = useState<Movie | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [movieFilter, setMovieFilter] = useState<MovieFilter>("all");
 
   const votes = useVoteStore((state) => state.votes);
-  const voteMovie = useVoteStore((state) => state.voteMovie);
-  const collectionVotes = votes.filter(
-    (vote) => vote.collectionId === collection.id,
+  const userVotes = votes.filter(
+    (vote) =>
+      vote.collectionId === collection.id && vote.userId === CURRENT_USER.id,
   );
 
   const movieIds = items.map((item) => item.movie.id);
   const totalMovies = items.length;
-  const moviesRated = countRatedMovies(movieIds, collectionVotes);
+  const moviesRated = countRatedMovies(movieIds, userVotes);
   const remaining = Math.max(totalMovies - moviesRated, 0);
 
-  const unratedItems = items.filter(
-    (item) =>
-      !collectionVotes.some((vote) => vote.movieId === item.movie.id),
+  const ratedItems = items.filter((item) =>
+    userVotes.some((vote) => vote.movieId === item.movie.id),
   );
-  const visibleItems = movieFilter === "unrated" ? unratedItems : items;
+  const visibleItems = movieFilter === "rated" ? ratedItems : items;
+
+  const description =
+    collection.description?.trim() ||
+    "A collection of recommendations waiting to be decided.";
+
+  const movieCountLabel =
+    totalMovies === 1 ? "1 movie" : `${totalMovies} movies`;
 
   useEffect(() => {
     if (!toastMessage) return;
@@ -82,170 +88,165 @@ export function CollectionDetailClient({
       return [...current, { movie, source: TMDB_SEARCH_SOURCE }];
     });
     setIsAddMovieOpen(false);
-    setToastMessage(`Added to ${collection.name} ❤️`);
+    setToastMessage(`Added to ${collection.name}`);
   }
 
-  function handleRemoveMovie(movieId: string) {
-    setItems((current) =>
-      current.filter((item) => item.movie.id !== movieId),
-    );
-    setSelectedMovie(null);
-    setToastMessage(`Removed from ${collection.name}`);
+  function handleOpenMovie(movie: Movie) {
+    router.push(`/collection/${collection.id}/movie/${movie.id}`);
   }
 
-  function handleVote(movieId: string, vote: VoteValue) {
-    voteMovie(collection.id, movieId, vote);
+  function voteForMovie(movieId: string) {
+    return userVotes.find((vote) => vote.movieId === movieId)?.vote;
   }
 
   return (
     <>
-      <div className="mx-auto w-full">
-        <div className="mb-6">
+      <div className="mx-auto w-full max-w-5xl">
+        <div className="mb-12">
           <Link
             href="/collections"
-            className="inline-flex items-center gap-2 text-sm font-medium text-netflix-muted transition-colors hover:text-white"
+            className="inline-flex items-center gap-2 text-sm text-netflix-muted transition-colors duration-200 hover:text-white"
           >
             <span aria-hidden="true">←</span>
             Collections
           </Link>
         </div>
 
-        <header className="flex flex-col gap-6 border-b border-white/10 pb-8 sm:flex-row sm:items-end sm:justify-between">
-          <div className="flex min-w-0 items-start gap-4 sm:gap-5">
+        <header>
+          <div className="flex items-start gap-5 sm:gap-6">
             <span
               aria-hidden="true"
-              className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/5 text-4xl sm:h-20 sm:w-20 sm:text-5xl"
+              className="text-5xl leading-none sm:text-6xl"
             >
               {collection.emoji}
             </span>
 
-            <div className="min-w-0 pt-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-semibold uppercase tracking-wide ${
-                    collection.shared
-                      ? "bg-netflix-red/15 text-netflix-red"
-                      : "bg-white/5 text-netflix-muted"
-                  }`}
-                >
-                  {collection.shared ? "Shared" : "Private"}
-                </span>
-              </div>
-
-              <h1 className="mt-2 text-3xl font-black tracking-tight text-white sm:text-5xl">
+            <div className="min-w-0 space-y-2 pt-1">
+              <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
                 {collection.name}
               </h1>
+              <p className="text-sm text-netflix-muted">{movieCountLabel}</p>
+              <p className="max-w-lg pt-1 text-sm leading-relaxed text-netflix-muted/80 sm:text-[0.9375rem]">
+                {description}
+              </p>
             </div>
-          </div>
-
-          <div className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:items-center">
-            <button
-              type="button"
-              onClick={() => setIsAddMovieOpen(true)}
-              className="w-full rounded-xl bg-netflix-red px-6 py-3.5 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-netflix-red-hover sm:w-auto"
-            >
-              ➕ Add Movie
-            </button>
-            <Link
-              href={`/rate/${collection.id}`}
-              className="inline-flex w-full items-center justify-center rounded-xl border border-white/10 bg-white/5 px-6 py-3.5 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-white/10 sm:w-auto"
-            >
-              ▶️ Continue Rating
-            </Link>
           </div>
         </header>
 
-        <section className="mt-8 grid grid-cols-1 gap-3 sm:mt-10 sm:grid-cols-3 sm:gap-4">
-          <SummaryCard label="Total Movies" value={totalMovies} />
-          <SummaryCard label="Movies Rated" value={moviesRated} />
-          <SummaryCard label="Remaining" value={remaining} />
+        <section className="mt-14 grid max-w-md grid-cols-3 gap-2.5 sm:gap-3">
+          <StatCard label="Movies" value={totalMovies} />
+          <StatCard label="Rated" value={moviesRated} />
+          <StatCard label="Remaining" value={remaining} />
         </section>
 
+        <div className="mt-12 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+          <button
+            type="button"
+            className="w-full rounded-xl bg-netflix-red px-7 py-3.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-netflix-red-hover sm:w-auto"
+          >
+            Continue Rating
+          </button>
+
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setIsAddMovieOpen(true)}
+              className="rounded-lg px-3 py-2 text-sm text-netflix-muted transition-colors duration-200 hover:bg-white/[0.04] hover:text-white"
+            >
+              + Add
+            </button>
+            <button
+              type="button"
+              className="rounded-lg px-3 py-2 text-sm text-netflix-muted transition-colors duration-200 hover:bg-white/[0.04] hover:text-white"
+            >
+              Sort
+            </button>
+            <button
+              type="button"
+              className="rounded-lg px-3 py-2 text-sm text-netflix-muted transition-colors duration-200 hover:bg-white/[0.04] hover:text-white"
+            >
+              Filter
+            </button>
+          </div>
+        </div>
+
         {totalMovies === 0 ? (
-          <section className="mt-10 sm:mt-12">
-            <EmptyState
-              emoji="🎬"
-              title="No movies yet"
-              description={`Start building ${collection.name} by adding your first title, then rate anytime.`}
-              action={{
-                label: "➕ Add Movie",
-                onClick: () => setIsAddMovieOpen(true),
-              }}
-            />
+          <section className="mt-24 flex flex-col items-center px-4 py-16 text-center sm:mt-28 sm:py-20">
+            <div
+              aria-hidden="true"
+              className="flex h-20 w-20 items-center justify-center text-5xl opacity-80"
+            >
+              🍿
+            </div>
+            <h2 className="mt-8 max-w-sm text-xl font-semibold tracking-tight text-white sm:text-2xl">
+              This collection is waiting for its first recommendation.
+            </h2>
+            <p className="mt-3 max-w-xs text-sm leading-relaxed text-netflix-muted">
+              Add a movie you discovered somewhere — a friend, a feed, or a
+              late-night search.
+            </p>
+            <button
+              type="button"
+              onClick={() => setIsAddMovieOpen(true)}
+              className="mt-10 rounded-xl bg-netflix-red px-7 py-3.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-netflix-red-hover"
+            >
+              + Add Your First Movie
+            </button>
           </section>
         ) : (
-          <>
-            <section className="mt-10 sm:mt-12">
-              <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-bold text-white sm:text-2xl">
-                    Movies
-                  </h2>
-                  <p className="mt-1 text-sm text-netflix-muted">
-                    Rate movies whenever you&apos;re ready.
-                  </p>
-                </div>
+          <section className="mt-16 sm:mt-20">
+            <div
+              role="tablist"
+              aria-label="Filter movies"
+              className="mb-8 flex items-center gap-1"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={movieFilter === "all"}
+                onClick={() => setMovieFilter("all")}
+                className={`rounded-lg px-3 py-1.5 text-sm transition-colors duration-200 ${
+                  movieFilter === "all"
+                    ? "bg-white/[0.08] font-medium text-white"
+                    : "text-netflix-muted hover:text-white"
+                }`}
+              >
+                All ({totalMovies})
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={movieFilter === "rated"}
+                onClick={() => setMovieFilter("rated")}
+                className={`rounded-lg px-3 py-1.5 text-sm transition-colors duration-200 ${
+                  movieFilter === "rated"
+                    ? "bg-white/[0.08] font-medium text-white"
+                    : "text-netflix-muted hover:text-white"
+                }`}
+              >
+                Rated ({moviesRated})
+              </button>
+            </div>
 
-                <div
-                  role="group"
-                  aria-label="Filter movies"
-                  className="flex w-fit rounded-xl border border-white/10 bg-white/5 p-1"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setMovieFilter("all")}
-                    className={`rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
-                      movieFilter === "all"
-                        ? "bg-netflix-red text-white"
-                        : "text-netflix-muted hover:text-white"
-                    }`}
-                  >
-                    All Movies
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMovieFilter("unrated")}
-                    className={`rounded-lg px-4 py-2 text-xs font-bold uppercase tracking-wide transition-colors ${
-                      movieFilter === "unrated"
-                        ? "bg-netflix-red text-white"
-                        : "text-netflix-muted hover:text-white"
-                    }`}
-                  >
-                    Unrated
-                  </button>
-                </div>
+            {visibleItems.length === 0 ? (
+              <p className="py-12 text-sm text-netflix-muted">
+                No rated movies yet. Open a title and mark I&apos;d Watch or Not
+                for Me.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-x-5 gap-y-10 sm:grid-cols-3 sm:gap-x-6 sm:gap-y-12 md:grid-cols-4 lg:grid-cols-5 lg:gap-x-7 lg:gap-y-14">
+                {visibleItems.map(({ movie, source }) => (
+                  <MovieGridCard
+                    key={movie.id}
+                    movie={movie}
+                    source={source}
+                    vote={voteForMovie(movie.id)}
+                    onOpen={handleOpenMovie}
+                  />
+                ))}
               </div>
-
-              {visibleItems.length === 0 ? (
-                <EmptyState
-                  emoji="✅"
-                  title="You're caught up"
-                  description="No more movies waiting for your vote. Add a new title or switch back to All Movies."
-                  action={{
-                    label: "Show All Movies",
-                    onClick: () => setMovieFilter("all"),
-                  }}
-                />
-              ) : (
-                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-5">
-                  {visibleItems.map(({ movie, source }) => (
-                    <MovieGridCard
-                      key={movie.id}
-                      movie={movie}
-                      source={source}
-                      vote={
-                        collectionVotes.find(
-                          (vote) => vote.movieId === movie.id,
-                        )?.vote
-                      }
-                      onVote={handleVote}
-                      onOpen={setSelectedMovie}
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-          </>
+            )}
+          </section>
         )}
       </div>
 
@@ -256,17 +257,11 @@ export function CollectionDetailClient({
         onAdd={handleAddMovie}
       />
 
-      <MovieDetailDrawer
-        movie={selectedMovie}
-        onClose={() => setSelectedMovie(null)}
-        onRemove={handleRemoveMovie}
-      />
-
       {toastMessage && (
         <div
           role="status"
           aria-live="polite"
-          className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-full border border-white/10 bg-netflix-surface px-5 py-3 text-sm font-semibold text-white shadow-[0_8px_30px_rgba(0,0,0,0.45)]"
+          className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-netflix-surface/95 px-5 py-3 text-sm font-medium text-white shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur-sm"
         >
           {toastMessage}
         </div>

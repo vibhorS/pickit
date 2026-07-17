@@ -47,6 +47,19 @@ export const movieService = {
     });
   },
 
+  getCollectionMovie(
+    items: CollectionItem[],
+    movieId: string,
+  ): CollectionMovie | undefined {
+    const item = items.find((entry) => entry.movieId === movieId);
+    if (!item) return undefined;
+
+    const movie = movies.find((entry) => entry.id === item.movieId);
+    if (!movie) return undefined;
+
+    return { movie, source: item.source };
+  },
+
   async search(query: string): Promise<Movie[]> {
     const results = await tmdbService.searchMovies(query);
     return results.map(mapTmdbMovieToMovie);
