@@ -1,5 +1,10 @@
 import { movies } from "@/lib/mock-data";
-import type { CollectionItem, Movie, RecommendationSource } from "@/lib/types";
+import type {
+  CollectionItem,
+  Movie,
+  RecommendationMetadata,
+  RecommendationSource,
+} from "@/lib/types";
 import {
   tmdbService,
   type TmdbSearchMovie,
@@ -8,6 +13,7 @@ import {
 export type CollectionMovie = {
   movie: Movie;
   source: RecommendationSource;
+  metadata?: RecommendationMetadata;
 };
 
 function mapTmdbMovieToMovie(movie: TmdbSearchMovie): Movie {
@@ -43,7 +49,7 @@ export const movieService = {
     return items.flatMap((item) => {
       const movie = movies.find((entry) => entry.id === item.movieId);
       if (!movie) return [];
-      return [{ movie, source: item.source }];
+      return [{ movie, source: item.source, metadata: item.metadata }];
     });
   },
 
@@ -57,7 +63,11 @@ export const movieService = {
     const movie = movies.find((entry) => entry.id === item.movieId);
     if (!movie) return undefined;
 
-    return { movie, source: item.source };
+    return {
+      movie,
+      source: item.source,
+      metadata: item.metadata,
+    };
   },
 
   async search(query: string): Promise<Movie[]> {

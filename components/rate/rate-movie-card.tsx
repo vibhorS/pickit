@@ -1,26 +1,22 @@
 "use client";
 
-import { RecommendationSourceChip } from "@/components/recommendation/recommendation-source-chip";
+import { Star } from "lucide-react";
+import { RecommendationContext } from "@/components/recommendation/recommendation-context";
 import { SwipeableVoteShell } from "@/components/rating/swipeable-vote-shell";
-import type { Movie, RecommendationSource, VoteValue } from "@/lib/types";
+import { PosterImage } from "@/components/ui/poster-image";
+import type {
+  Movie,
+  RecommendationMetadata,
+  RecommendationSource,
+  VoteValue,
+} from "@/lib/types";
 
 type RateMovieCardProps = {
   movie: Movie;
   source: RecommendationSource;
+  metadata?: RecommendationMetadata;
   onVote: (vote: VoteValue) => void;
 };
-
-function StarIcon() {
-  return (
-    <svg
-      aria-hidden="true"
-      className="h-4 w-4 shrink-0 fill-current"
-      viewBox="0 0 20 20"
-    >
-      <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-    </svg>
-  );
-}
 
 function formatRuntime(minutes: number): string {
   const hours = Math.floor(minutes / 60);
@@ -30,7 +26,12 @@ function formatRuntime(minutes: number): string {
   return `${hours}h ${mins}m`;
 }
 
-export function RateMovieCard({ movie, source, onVote }: RateMovieCardProps) {
+export function RateMovieCard({
+  movie,
+  source,
+  metadata,
+  onVote,
+}: RateMovieCardProps) {
   const metaParts = [
     movie.year > 0 ? String(movie.year) : null,
     `TMDb ${movie.rating.toFixed(1)}`,
@@ -45,62 +46,56 @@ export function RateMovieCard({ movie, source, onVote }: RateMovieCardProps) {
           <button
             type="button"
             onClick={() => vote("pass")}
-            className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors duration-200 hover:bg-white/10 sm:flex-1"
+            className="btn-secondary w-full sm:flex-1"
           >
-            ❌ Not for Me
+            Not for Me
           </button>
           <button
             type="button"
             onClick={() => vote("like")}
-            className="w-full rounded-xl bg-netflix-red px-4 py-4 text-sm font-bold uppercase tracking-wide text-white transition-colors duration-200 hover:bg-netflix-red-hover sm:flex-1"
+            className="btn-primary w-full sm:flex-1"
           >
-            ❤️ I&apos;d Watch
+            I&apos;d Watch
           </button>
         </div>
       )}
     >
       <div className="relative aspect-[2/3] w-full overflow-hidden bg-black sm:aspect-[3/4]">
-        {movie.posterUrl ? (
-          <img
-            alt={`${movie.title} poster`}
-            className="h-full w-full object-cover"
-            src={movie.posterUrl}
-          />
-        ) : (
-          <div className="flex h-full items-center justify-center text-sm text-netflix-muted">
-            No poster
-          </div>
-        )}
-        <div className="absolute inset-0 bg-gradient-to-t from-netflix-surface via-transparent to-black/25" />
+        <PosterImage
+          src={movie.posterUrl}
+          alt={`${movie.title} poster`}
+          priority
+        />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-netflix-surface via-transparent to-black/25" />
       </div>
 
       <div className="flex flex-col gap-4 px-5 py-5 sm:px-6 sm:py-6">
         <div className="space-y-2">
-          <h2 className="text-2xl font-black tracking-tight text-white sm:text-3xl">
+          <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl">
             {movie.title}
           </h2>
-
-          <p className="inline-flex flex-wrap items-center gap-x-2 gap-y-1 text-sm font-semibold text-amber-400">
-            <span className="inline-flex items-center gap-1">
-              <StarIcon />
-              {metaParts.join(" · ")}
+          <p className="flex flex-wrap items-center gap-x-2 text-sm text-netflix-muted">
+            <span className="inline-flex items-center gap-1 text-amber-400">
+              <Star
+                aria-hidden="true"
+                className="size-3.5 fill-current"
+                strokeWidth={0}
+              />
             </span>
+            {metaParts.join(" · ")}
           </p>
-
-          <RecommendationSourceChip type={source.type} label={source.label} />
         </div>
 
+        <RecommendationContext
+          metadata={metadata}
+          source={source}
+          variant="movie-night"
+        />
+
         {movie.genres.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {movie.genres.map((genre) => (
-              <span
-                key={genre}
-                className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-[0.6875rem] font-medium text-netflix-muted"
-              >
-                {genre}
-              </span>
-            ))}
-          </div>
+          <p className="text-sm text-netflix-muted/85">
+            {movie.genres.join(" · ")}
+          </p>
         )}
 
         <p className="line-clamp-3 text-sm leading-relaxed text-netflix-muted">

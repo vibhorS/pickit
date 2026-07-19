@@ -11,16 +11,10 @@ export function NavButton({
   children,
   variant = "primary",
 }: NavButtonProps) {
-  const styles =
-    variant === "primary"
-      ? "bg-netflix-red text-white hover:bg-netflix-red-hover"
-      : "bg-netflix-elevated/80 text-white hover:bg-netflix-elevated";
+  const styles = variant === "primary" ? "btn-primary" : "btn-secondary";
 
   return (
-    <Link
-      href={href}
-      className={`inline-block rounded px-6 py-3 text-sm font-bold uppercase tracking-wide transition-colors ${styles}`}
-    >
+    <Link href={href} prefetch className={styles}>
       {children}
     </Link>
   );

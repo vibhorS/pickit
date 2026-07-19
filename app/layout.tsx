@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AppShell } from "@/components/capture/app-shell";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -13,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Movie Match",
-  description: "Build a shared movie bucket with your partner.",
+  title: "Decision",
+  description: "Collect recommendations. Decide what to watch together.",
 };
 
 export default function RootLayout({
@@ -28,7 +29,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-netflix-black text-white">
-        {children}
+        <AppShell>{children}</AppShell>
       </body>
     </html>
   );

@@ -56,9 +56,19 @@ export type RecommendationSource = {
   label: string;
 };
 
+export type RecommendationMetadata = {
+  sourcePlatform?: string;
+  sourceUrl?: string;
+  recommendedBy?: string;
+  savedAt?: string;
+  notes?: string;
+  captureMethod?: string;
+};
+
 export type CollectionItem = {
   movieId: string;
   source: RecommendationSource;
+  metadata?: RecommendationMetadata;
 };
 
 // ======================

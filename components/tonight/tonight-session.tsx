@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { Heart } from "lucide-react";
 import { useState } from "react";
+import { EmptyState } from "@/components/ui/empty-state";
+import { FadeIn } from "@/components/ui/fade-in";
+import { PosterImage } from "@/components/ui/poster-image";
 import type { Movie } from "@/lib/types";
 
 type TonightSessionProps = {
@@ -42,7 +46,6 @@ export function TonightSession({
   const matchKey = matches.map((movie) => movie.id).join(",");
   const [syncedKey, setSyncedKey] = useState(matchKey);
 
-  // Reset tonight's session queue only when the mutual-match set changes.
   if (matchKey !== syncedKey && !selected) {
     setSyncedKey(matchKey);
     setQueue(matches);
@@ -50,32 +53,30 @@ export function TonightSession({
 
   if (matches.length === 0) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-8">
+      <FadeIn className="mx-auto w-full max-w-lg">
         <Link
           href={`/collection/${collectionId}`}
-          className="inline-flex items-center gap-2 text-sm text-netflix-muted transition-colors duration-200 hover:text-white"
+          prefetch
+          className="btn-ghost -ml-3 inline-flex items-center gap-2"
         >
           <span aria-hidden="true">←</span>
           {collectionName}
         </Link>
-        <section className="px-2 py-16 text-center">
-          <p aria-hidden="true" className="text-4xl">
-            ❤️
-          </p>
-          <h2 className="mt-6 text-3xl font-bold tracking-tight text-white">
-            No mutual matches yet
-          </h2>
-          <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-netflix-muted">
-            Tonight unlocks when you both mark I&apos;d Watch on the same movie.
-          </p>
+        <EmptyState
+          icon={<Heart className="size-7" strokeWidth={1.5} />}
+          title="No mutual matches yet"
+          description="Tonight unlocks when you both mark I'd Watch on the same movie."
+        />
+        <div className="text-center">
           <Link
             href={`/collection/${collectionId}`}
-            className="mt-10 inline-flex rounded-xl bg-netflix-red px-7 py-3.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-netflix-red-hover"
+            prefetch
+            className="btn-primary"
           >
             Back to Collection
           </Link>
-        </section>
-      </div>
+        </div>
+      </FadeIn>
     );
   }
 
@@ -83,7 +84,7 @@ export function TonightSession({
     const runtime = formatRuntime(selected.runtime);
 
     return (
-      <div className="relative mx-auto w-full max-w-2xl overflow-hidden rounded-3xl">
+      <FadeIn className="relative mx-auto w-full max-w-2xl overflow-hidden rounded-3xl">
         {selected.posterUrl && (
           <div
             aria-hidden="true"
@@ -93,18 +94,12 @@ export function TonightSession({
         )}
         <div className="relative px-5 py-8 sm:px-10 sm:py-12">
           <div className="mx-auto flex max-w-sm flex-col items-center text-center">
-            <div className="aspect-[2/3] w-48 overflow-hidden rounded-2xl shadow-[0_24px_60px_rgba(0,0,0,0.55)] sm:w-56">
-              {selected.posterUrl ? (
-                <img
-                  alt={`${selected.title} poster`}
-                  className="h-full w-full object-cover"
-                  src={selected.posterUrl}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center bg-netflix-elevated text-netflix-muted">
-                  No poster
-                </div>
-              )}
+            <div className="aspect-[2/3] w-48 overflow-hidden rounded-2xl shadow-[var(--shadow-elevated)] sm:w-56">
+              <PosterImage
+                src={selected.posterUrl}
+                alt={`${selected.title} poster`}
+                priority
+              />
             </div>
 
             <p aria-hidden="true" className="mt-8 text-4xl">
@@ -126,43 +121,38 @@ export function TonightSession({
 
             <Link
               href={`/collection/${collectionId}`}
-              className="mt-8 inline-flex w-full items-center justify-center rounded-xl bg-netflix-red px-7 py-3.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-netflix-red-hover"
+              prefetch
+              className="btn-primary mt-8 w-full"
             >
               Done
             </Link>
           </div>
         </div>
-      </div>
+      </FadeIn>
     );
   }
 
   if (queue.length === 0) {
     return (
-      <div className="mx-auto w-full max-w-lg space-y-8">
+      <FadeIn className="mx-auto w-full max-w-lg">
         <Link
           href={`/collection/${collectionId}`}
-          className="inline-flex items-center gap-2 text-sm text-netflix-muted transition-colors duration-200 hover:text-white"
+          prefetch
+          className="btn-ghost -ml-3 inline-flex items-center gap-2"
         >
           <span aria-hidden="true">←</span>
           {collectionName}
         </Link>
-        <section className="px-2 py-16 text-center">
-          <h2 className="text-3xl font-bold tracking-tight text-white">
-            That&apos;s the queue
-          </h2>
-          <p className="mx-auto mt-3 max-w-sm text-sm leading-relaxed text-netflix-muted">
-            You skipped every mutual match for tonight. Come back anytime —
-            nothing was removed from the collection.
-          </p>
-          <button
-            type="button"
-            onClick={() => setQueue(matches)}
-            className="mt-10 inline-flex rounded-xl bg-netflix-red px-7 py-3.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-netflix-red-hover"
-          >
-            Start Over
-          </button>
-        </section>
-      </div>
+        <EmptyState
+          icon={<Heart className="size-7" strokeWidth={1.5} />}
+          title="That's the queue"
+          description="You skipped every mutual match for tonight. Come back anytime — nothing was removed from the collection."
+          action={{
+            label: "Start Over",
+            onClick: () => setQueue(matches),
+          }}
+        />
+      </FadeIn>
     );
   }
 
@@ -181,11 +171,12 @@ export function TonightSession({
   }
 
   return (
-    <div className="mx-auto w-full max-w-2xl">
+    <FadeIn className="mx-auto w-full max-w-2xl">
       <div className="mb-6 flex items-center justify-between gap-4">
         <Link
           href={`/collection/${collectionId}`}
-          className="inline-flex items-center gap-2 text-sm text-netflix-muted transition-colors duration-200 hover:text-white"
+          prefetch
+          className="btn-ghost -ml-3 inline-flex items-center gap-2"
         >
           <span aria-hidden="true">←</span>
           Tonight
@@ -193,7 +184,7 @@ export function TonightSession({
         <p className="text-sm text-netflix-muted">{queue.length} left</p>
       </div>
 
-      <article className="relative overflow-hidden rounded-3xl bg-netflix-surface shadow-[0_16px_48px_rgba(0,0,0,0.5)]">
+      <article className="relative overflow-hidden rounded-3xl bg-netflix-surface shadow-[var(--shadow-elevated)]">
         {current.posterUrl && (
           <div
             aria-hidden="true"
@@ -207,19 +198,13 @@ export function TonightSession({
         />
 
         <div className="relative flex flex-col gap-8 px-5 pb-6 pt-8 sm:flex-row sm:items-end sm:px-8 sm:pb-8 sm:pt-12">
-          <div className="mx-auto w-40 shrink-0 overflow-hidden rounded-xl shadow-[0_16px_40px_rgba(0,0,0,0.55)] sm:mx-0 sm:w-44">
-            <div className="aspect-[2/3] bg-netflix-elevated">
-              {current.posterUrl ? (
-                <img
-                  alt={`${current.title} poster`}
-                  className="h-full w-full object-cover"
-                  src={current.posterUrl}
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-netflix-muted">
-                  No poster
-                </div>
-              )}
+          <div className="mx-auto w-40 shrink-0 overflow-hidden rounded-xl shadow-[var(--shadow-elevated)] sm:mx-0 sm:w-44">
+            <div className="aspect-[2/3]">
+              <PosterImage
+                src={current.posterUrl}
+                alt={`${current.title} poster`}
+                priority
+              />
             </div>
           </div>
 
@@ -251,19 +236,19 @@ export function TonightSession({
           <button
             type="button"
             onClick={() => setSelected(current)}
-            className="w-full rounded-xl bg-netflix-red px-4 py-4 text-sm font-semibold text-white transition-colors duration-200 hover:bg-netflix-red-hover sm:flex-1"
+            className="btn-primary w-full sm:flex-1"
           >
             Watch Tonight
           </button>
           <button
             type="button"
             onClick={handleSkip}
-            className="w-full rounded-xl bg-white/5 px-4 py-4 text-sm font-semibold text-white transition-colors duration-200 hover:bg-white/10 sm:flex-1"
+            className="btn-secondary w-full sm:flex-1"
           >
             Skip
           </button>
         </div>
       </article>
-    </div>
+    </FadeIn>
   );
 }

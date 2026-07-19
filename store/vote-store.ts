@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import { mockUserSeedVotes } from "@/lib/mock-user-votes";
 import { createMovieVote } from "@/lib/vote-status";
 import { CURRENT_USER } from "@/lib/users";
 import type { MovieVote, VoteValue } from "@/lib/types";
@@ -29,7 +30,7 @@ function reviveVotes(votes: MovieVote[]): MovieVote[] {
 export const useVoteStore = create<VoteStore>()(
   persist(
     (set, get) => ({
-      votes: [],
+      votes: mockUserSeedVotes,
 
       voteMovie: (collectionId, movieId, vote) =>
         set((state) => {
@@ -68,7 +69,10 @@ export const useVoteStore = create<VoteStore>()(
       partialize: (state) => ({ votes: state.votes }),
       onRehydrateStorage: () => (state) => {
         if (!state) return;
-        state.votes = reviveVotes(state.votes);
+        const revived = reviveVotes(state.votes);
+        // Fresh installs with an empty persisted bag get demo seed votes.
+        state.votes =
+          revived.length === 0 ? reviveVotes(mockUserSeedVotes) : revived;
       },
     },
   ),

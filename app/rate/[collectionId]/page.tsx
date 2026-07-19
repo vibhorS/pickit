@@ -10,6 +10,11 @@ type RatePageProps = {
 
 export default async function RatePage({ params }: RatePageProps) {
   const { collectionId } = await params;
+
+  if (!collectionId) {
+    notFound();
+  }
+
   const collection = collectionService.getById(collectionId);
 
   if (!collection) {

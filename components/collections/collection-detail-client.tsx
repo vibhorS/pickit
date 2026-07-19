@@ -2,26 +2,33 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { AnimatePresence, motion } from "framer-motion";
+import { Film, Plus } from "lucide-react";
 import { useEffect, useState } from "react";
 import { AddMovieModal } from "@/components/collections/add-movie-modal";
+import { CollectionRecommendationInsights } from "@/components/collections/collection-recommendation-insights";
 import { PartnerStatus } from "@/components/collections/partner-status";
 import { MovieGridCard } from "@/components/movie/movie-grid-card";
-import {
-  countStillWaiting,
-  getMutualMatchMovies,
-  getPartnerRatingStatus,
-} from "@/lib/match-engine";
+import { AnimatedNumber } from "@/components/ui/animated-number";
+import { EmptyState, Toast } from "@/components/ui/empty-state";
+import { FadeIn } from "@/components/ui/fade-in";
 import { getPartnerVotesForCollection } from "@/lib/mock-partner-votes";
+import { MOTION, staggerContainer } from "@/lib/motion";
+import { sourceFromMetadata } from "@/lib/recommendation-metadata";
 import { TMDB_SEARCH_SOURCE } from "@/lib/recommendation-source";
-import type { CollectionMovie } from "@/lib/services/movie-service";
-import { countRatedMovies } from "@/lib/vote-status";
-import type { Collection, Movie, VoteValue } from "@/lib/types";
+import type {
+  Collection,
+  Movie,
+  RecommendationMetadata,
+  VoteValue,
+} from "@/lib/types";
 import { CURRENT_USER } from "@/lib/users";
+import { useCollectionStats } from "@/store/collection-stats-selector";
+import { useLocalCollectionStore } from "@/store/local-collection-store";
 import { useVoteStore } from "@/store/vote-store";
 
 type CollectionDetailClientProps = {
   collection: Collection;
-  initialItems: CollectionMovie[];
 };
 
 type StatCardProps = {
@@ -40,13 +47,12 @@ function StatCard({ label, value, emphasize = false }: StatCardProps) {
       <p className="text-[0.6875rem] font-medium uppercase tracking-wide text-netflix-muted/80">
         {label}
       </p>
-      <p
-        className={`mt-1 text-2xl font-semibold tracking-tight sm:text-[1.75rem] ${
+      <AnimatedNumber
+        value={value}
+        className={`mt-1 block text-2xl font-semibold tracking-tight sm:text-[1.75rem] ${
           emphasize ? "text-rose-200" : "text-white"
         }`}
-      >
-        {value}
-      </p>
+      />
     </div>
   );
 }
@@ -55,16 +61,27 @@ type MovieFilter = "all" | "unrated" | "rated" | "matches";
 
 export function CollectionDetailClient({
   collection,
-  initialItems,
 }: CollectionDetailClientProps) {
   const router = useRouter();
-  const [items, setItems] = useState(initialItems);
   const [isAddMovieOpen, setIsAddMovieOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  // null = auto: Unrated while movies remain, otherwise All.
   const [selectedFilter, setSelectedFilter] = useState<MovieFilter | null>(
     null,
   );
+
+  const addLocalMovie = useLocalCollectionStore((state) => state.addMovie);
+  const stats = useCollectionStats(collection.id);
+  const {
+    items,
+    totalMovies,
+    myRated: youRated,
+    partnerRated,
+    unratedMine: remaining,
+    unratedPartner,
+    mutualMatches: mutualCount,
+    completionPercent: completion,
+    mutualMatchMovies,
+  } = stats;
 
   const votes = useVoteStore((state) => state.votes);
   const userVotes = votes.filter(
@@ -73,17 +90,10 @@ export function CollectionDetailClient({
   );
   const partnerVotes = getPartnerVotesForCollection(collection.id);
 
-  const movies = items.map((item) => item.movie);
-  const movieIds = movies.map((movie) => movie.id);
-  const totalMovies = items.length;
-  const youRated = countRatedMovies(movieIds, userVotes);
-  const partnerRated = countRatedMovies(movieIds, partnerVotes);
-  const remaining = Math.max(totalMovies - youRated, 0);
-  const mutualMatches = getMutualMatchMovies(movies, userVotes, partnerVotes);
-  const mutualCount = mutualMatches.length;
-  const stillWaiting = countStillWaiting(movieIds, userVotes, partnerVotes);
-  const partnerStatus = getPartnerRatingStatus(totalMovies, partnerRated);
-  const mutualIds = new Set(mutualMatches.map((movie) => movie.id));
+  const partnerStatus = unratedPartner === 0 ? "connected" : "waiting";
+  const mutualIds = new Set(
+    mutualMatchMovies.map((movie) => movie.id),
+  );
 
   const ratedItems = items.filter((item) =>
     userVotes.some((vote) => vote.movieId === item.movie.id),
@@ -113,27 +123,62 @@ export function CollectionDetailClient({
 
   useEffect(() => {
     if (!toastMessage) return;
-
-    const timeoutId = window.setTimeout(() => {
-      setToastMessage(null);
-    }, 2500);
-
+    const timeoutId = window.setTimeout(() => setToastMessage(null), 2500);
     return () => window.clearTimeout(timeoutId);
   }, [toastMessage]);
 
-  function handleAddMovie(movie: Movie) {
-    setItems((current) => {
-      if (current.some((item) => item.movie.id === movie.id)) {
-        return current;
-      }
-      return [...current, { movie, source: TMDB_SEARCH_SOURCE }];
-    });
+  useEffect(() => {
+    if (!collection.id) return;
+    router.prefetch(`/rate/${collection.id}`);
+    router.prefetch(`/tonight/${collection.id}`);
+  }, [collection.id, router]);
+
+  function handleAddMovie(
+    movie: Movie,
+    metadata: RecommendationMetadata,
+  ) {
+    if (!collection.id) {
+      setToastMessage("Couldn't add that movie — collection is missing.");
+      return;
+    }
+    if (!movie?.id) {
+      setToastMessage("Couldn't add that movie — missing movie id.");
+      return;
+    }
+
+    const alreadyInCollection = items.some(
+      (item) => item.movie.id === movie.id,
+    );
+    if (alreadyInCollection) {
+      setIsAddMovieOpen(false);
+      setToastMessage(`Already in ${collection.name}`);
+      return;
+    }
+
+    const source = sourceFromMetadata(metadata, TMDB_SEARCH_SOURCE);
+    const added = addLocalMovie(
+      collection.id,
+      movie,
+      source,
+      metadata,
+    );
     setIsAddMovieOpen(false);
-    setToastMessage(`Added to ${collection.name}`);
+    setToastMessage(
+      added
+        ? `Added to ${collection.name}`
+        : `Already in ${collection.name}`,
+    );
   }
 
   function handleOpenMovie(movie: Movie) {
-    router.push(`/collection/${collection.id}/movie/${movie.id}`);
+    if (!collection.id || !movie?.id) {
+      setToastMessage("Couldn't open that movie. Try again.");
+      return;
+    }
+
+    const href = `/collection/${collection.id}/movie/${movie.id}`;
+    router.prefetch(href);
+    router.push(href);
   }
 
   function voteForMovie(
@@ -144,26 +189,48 @@ export function CollectionDetailClient({
     return list.find((vote) => vote.movieId === movieId)?.vote;
   }
 
-  function emptyFilterMessage() {
+  function emptyFilterCopy() {
     if (movieFilter === "rated") {
-      return "No rated movies yet. Open a title and mark I'd Watch or Not for Me.";
+      return {
+        title: "Nothing rated yet",
+        description:
+          "Open a title and mark I'd Watch or Not for Me to build your list.",
+      };
     }
     if (movieFilter === "matches") {
-      return "No mutual matches yet. Keep rating — matches appear when you both say I'd Watch.";
+      return {
+        title: "No mutual matches yet",
+        description:
+          "Matches appear when you both mark I'd Watch on the same movie.",
+      };
     }
     if (movieFilter === "unrated") {
-      return "🎉 You're all caught up — every movie here is rated.";
+      return {
+        title:
+          stats.readinessState === "waiting-for-partner"
+            ? "Waiting for partner"
+            : "You're all caught up",
+        description:
+          stats.readinessState === "waiting-for-partner"
+            ? "You've rated every movie. Your partner still has ratings left."
+            : "Both of you have rated every movie in this collection.",
+      };
     }
-    return "Nothing to show.";
+    return {
+      title: "Nothing to show",
+      description: "Try another filter.",
+    };
   }
+
+  const emptyCopy = emptyFilterCopy();
 
   return (
     <>
-      <div className="mx-auto w-full max-w-5xl">
+      <FadeIn className="mx-auto w-full max-w-5xl">
         <div className="mb-12">
           <Link
             href="/collections"
-            className="inline-flex items-center gap-2 text-sm text-netflix-muted transition-colors duration-200 hover:text-white"
+            className="btn-ghost -ml-3 inline-flex items-center gap-2"
           >
             <span aria-hidden="true">←</span>
             Collections
@@ -178,7 +245,6 @@ export function CollectionDetailClient({
             >
               {collection.emoji}
             </span>
-
             <div className="min-w-0 space-y-3 pt-1">
               <h1 className="text-4xl font-bold tracking-tight text-white sm:text-5xl">
                 {collection.name}
@@ -187,13 +253,25 @@ export function CollectionDetailClient({
               <p className="max-w-lg text-sm leading-relaxed text-netflix-muted/80 sm:text-[0.9375rem]">
                 {description}
               </p>
-              {totalMovies > 0 && <PartnerStatus status={partnerStatus} />}
+              {totalMovies > 0 && (
+                <>
+                  <PartnerStatus status={partnerStatus} />
+                  <p className="inline-flex items-center gap-1.5 rounded-full bg-white/[0.05] px-3 py-1 text-xs font-medium text-white">
+                    <span aria-hidden="true">{stats.readinessEmoji}</span>
+                    {stats.readinessLabel}
+                  </p>
+                </>
+              )}
             </div>
           </div>
         </header>
 
+        <div className="mt-8 max-w-4xl">
+          <CollectionRecommendationInsights items={items} />
+        </div>
+
         {totalMovies > 0 && (
-          <section className="mt-14 max-w-3xl">
+          <section className="mt-14 max-w-3xl space-y-5">
             <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 sm:gap-3 lg:grid-cols-5">
               <StatCard label="Movies" value={totalMovies} />
               <StatCard label="You've Rated" value={youRated} />
@@ -203,37 +281,52 @@ export function CollectionDetailClient({
                 value={mutualCount}
                 emphasize={mutualCount > 0}
               />
-              <StatCard label="Still Waiting" value={stillWaiting} />
+              <StatCard label="Mine Left" value={remaining} />
+            </div>
+            <div>
+              <div className="h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
+                <motion.div
+                  className="h-full rounded-full bg-netflix-red"
+                  initial={false}
+                  animate={{ width: `${completion}%` }}
+                  transition={{
+                    duration: MOTION.durationSlow,
+                    ease: MOTION.ease,
+                  }}
+                />
+              </div>
+              <p className="mt-2 text-xs text-netflix-muted/70">
+                {completion}% shared completion · You {youRated}/{totalMovies} ·
+                Partner {partnerRated}/{totalMovies}
+              </p>
             </div>
           </section>
         )}
 
         <div className="mt-12 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-            {mutualCount > 0 ? (
+            {stats.readinessState === "ready" && mutualCount > 0 ? (
               <>
                 <Link
                   href={`/tonight/${collection.id}`}
-                  className="inline-flex w-full items-center justify-center rounded-xl bg-netflix-red px-7 py-3.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-netflix-red-hover sm:w-auto"
+                  prefetch
+                  className="btn-primary w-full sm:w-auto"
                 >
-                  🎬 Pick Tonight&apos;s Movie
+                  Pick Tonight&apos;s Movie
                 </Link>
-                {remaining > 0 && (
-                  <Link
-                    href={`/rate/${collection.id}`}
-                    className="inline-flex items-center justify-center rounded-lg px-3 py-2 text-sm text-netflix-muted transition-colors duration-200 hover:bg-white/[0.04] hover:text-white"
-                  >
-                    Continue Rating
-                  </Link>
-                )}
               </>
-            ) : remaining > 0 ? (
+            ) : stats.readinessState === "needs-my-ratings" ? (
               <Link
                 href={`/rate/${collection.id}`}
-                className="inline-flex w-full items-center justify-center rounded-xl bg-netflix-red px-7 py-3.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-netflix-red-hover sm:w-auto"
+                prefetch
+                className="btn-primary w-full sm:w-auto"
               >
                 Continue Rating
               </Link>
+            ) : stats.readinessState === "waiting-for-partner" ? (
+              <p className="rounded-xl bg-amber-500/10 px-4 py-3 text-sm font-medium text-amber-100/90">
+                Waiting for partner
+              </p>
             ) : totalMovies > 0 ? (
               <div className="space-y-2">
                 <p className="text-sm font-medium text-netflix-muted">
@@ -241,9 +334,9 @@ export function CollectionDetailClient({
                 </p>
                 <span
                   aria-disabled="true"
-                  className="inline-flex cursor-not-allowed items-center justify-center rounded-xl bg-white/[0.04] px-5 py-3 text-sm font-medium text-netflix-muted/45"
+                  className="btn-primary inline-flex cursor-not-allowed opacity-40"
                 >
-                  🎬 Pick Tonight&apos;s Movie
+                  Pick Tonight&apos;s Movie
                 </span>
               </div>
             ) : null}
@@ -252,52 +345,43 @@ export function CollectionDetailClient({
           <button
             type="button"
             onClick={() => setIsAddMovieOpen(true)}
-            className="rounded-lg px-3 py-2 text-sm text-netflix-muted transition-colors duration-200 hover:bg-white/[0.04] hover:text-white"
+            className="btn-ghost inline-flex items-center gap-1.5"
           >
-            + Add
+            <Plus className="size-4" aria-hidden="true" strokeWidth={2} />
+            Add
           </button>
         </div>
 
         {totalMovies === 0 ? (
-          <section className="mt-24 flex flex-col items-center px-4 py-16 text-center sm:mt-28 sm:py-20">
-            <div
-              aria-hidden="true"
-              className="flex h-20 w-20 items-center justify-center text-5xl opacity-80"
-            >
-              🍿
-            </div>
-            <h2 className="mt-8 max-w-sm text-xl font-semibold tracking-tight text-white sm:text-2xl">
-              This collection is waiting for its first recommendation.
-            </h2>
-            <p className="mt-3 max-w-xs text-sm leading-relaxed text-netflix-muted">
-              Add a movie you discovered somewhere — a friend, a feed, or a
-              late-night search.
-            </p>
-            <button
-              type="button"
-              onClick={() => setIsAddMovieOpen(true)}
-              className="mt-10 rounded-xl bg-netflix-red px-7 py-3.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-netflix-red-hover"
-            >
-              + Add Your First Movie
-            </button>
-          </section>
+          <EmptyState
+            icon={<Film className="size-7" strokeWidth={1.5} />}
+            title="This collection is waiting for its first recommendation."
+            description="Add a movie you discovered somewhere — a friend, a feed, or a late-night search."
+            action={{
+              label: "Add Your First Movie",
+              onClick: () => setIsAddMovieOpen(true),
+            }}
+          />
         ) : (
           <>
             <section className="mt-14 sm:mt-16">
               <button
                 type="button"
                 onClick={() => setSelectedFilter("matches")}
-                className={`group w-full max-w-md rounded-2xl px-5 py-5 text-left transition duration-300 sm:px-6 ${
+                className={`group w-full max-w-md rounded-2xl px-5 py-5 text-left transition duration-200 sm:px-6 ${
                   movieFilter === "matches"
                     ? "bg-rose-500/15"
                     : "bg-white/[0.03] hover:bg-white/[0.05]"
                 }`}
               >
                 <p className="text-sm font-medium text-rose-200/90">
-                  ❤️ Mutual Matches
+                  Mutual Matches
                 </p>
                 <p className="mt-1 text-3xl font-semibold tracking-tight text-white">
-                  {mutualCount === 1 ? "1 Movie" : `${mutualCount} Movies`}
+                  <AnimatedNumber value={mutualCount} />
+                  <span className="ml-2 text-lg font-medium text-netflix-muted">
+                    {mutualCount === 1 ? "Movie" : "Movies"}
+                  </span>
                 </p>
                 <p className="mt-2 text-sm text-netflix-muted/75 transition-colors group-hover:text-netflix-muted">
                   {mutualCount > 0
@@ -327,7 +411,7 @@ export function CollectionDetailClient({
                     role="tab"
                     aria-selected={movieFilter === filter}
                     onClick={() => setSelectedFilter(filter)}
-                    className={`rounded-lg px-3 py-1.5 text-sm transition-colors duration-200 ${
+                    className={`min-h-9 rounded-lg px-3 py-1.5 text-sm transition-colors duration-200 ${
                       movieFilter === filter
                         ? "bg-white/[0.08] font-medium text-white"
                         : "text-netflix-muted hover:text-white"
@@ -338,28 +422,49 @@ export function CollectionDetailClient({
                 ))}
               </div>
 
-              {visibleItems.length === 0 ? (
-                <p className="py-12 text-sm text-netflix-muted">
-                  {emptyFilterMessage()}
-                </p>
-              ) : (
-                <div className="grid grid-cols-2 gap-x-5 gap-y-10 sm:grid-cols-3 sm:gap-x-6 sm:gap-y-12 md:grid-cols-4 lg:grid-cols-5 lg:gap-x-7 lg:gap-y-14">
-                  {visibleItems.map(({ movie, source }) => (
-                    <MovieGridCard
-                      key={movie.id}
-                      movie={movie}
-                      source={source}
-                      vote={voteForMovie(movie.id, "user")}
-                      partnerVote={voteForMovie(movie.id, "partner")}
-                      onOpen={handleOpenMovie}
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={movieFilter}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -4 }}
+                  transition={{
+                    duration: MOTION.duration,
+                    ease: MOTION.ease,
+                  }}
+                >
+                  {visibleItems.length === 0 ? (
+                    <EmptyState
+                      icon={<Film className="size-7" strokeWidth={1.5} />}
+                      title={emptyCopy.title}
+                      description={emptyCopy.description}
                     />
-                  ))}
-                </div>
-              )}
+                  ) : (
+                    <motion.div
+                      variants={staggerContainer}
+                      initial="initial"
+                      animate="animate"
+                      className="grid grid-cols-2 gap-x-4 gap-y-8 sm:grid-cols-3 sm:gap-x-6 sm:gap-y-12 md:grid-cols-4 lg:grid-cols-5 lg:gap-x-7 lg:gap-y-14"
+                    >
+                      {visibleItems.map(({ movie, source, metadata }) => (
+                        <MovieGridCard
+                          key={movie.id}
+                          movie={movie}
+                          source={source}
+                          metadata={metadata}
+                          vote={voteForMovie(movie.id, "user")}
+                          partnerVote={voteForMovie(movie.id, "partner")}
+                          onOpen={handleOpenMovie}
+                        />
+                      ))}
+                    </motion.div>
+                  )}
+                </motion.div>
+              </AnimatePresence>
             </section>
           </>
         )}
-      </div>
+      </FadeIn>
 
       <AddMovieModal
         open={isAddMovieOpen}
@@ -368,15 +473,7 @@ export function CollectionDetailClient({
         onAdd={handleAddMovie}
       />
 
-      {toastMessage && (
-        <div
-          role="status"
-          aria-live="polite"
-          className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-netflix-surface/95 px-5 py-3 text-sm font-medium text-white shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur-sm"
-        >
-          {toastMessage}
-        </div>
-      )}
+      <Toast message={toastMessage} />
     </>
   );
 }

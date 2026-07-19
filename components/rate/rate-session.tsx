@@ -1,14 +1,24 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { Film } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { RateCompletion } from "@/components/rate/rate-completion";
 import { RateMovieCard } from "@/components/rate/rate-movie-card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { FadeIn } from "@/components/ui/fade-in";
+import { MovieDetailSkeleton } from "@/components/ui/skeleton";
+import { MOTION } from "@/lib/motion";
 import type { CollectionMovie } from "@/lib/services/movie-service";
 import { countRatedMovies, isMovieRated } from "@/lib/vote-status";
 import type { Collection, VoteValue } from "@/lib/types";
 import { CURRENT_USER } from "@/lib/users";
+import {
+  EMPTY_LOCAL_ITEMS,
+  mergeCollectionItems,
+  useLocalCollectionStore,
+} from "@/store/local-collection-store";
 import { useVoteStore } from "@/store/vote-store";
 
 type RateSessionProps = {
@@ -16,21 +26,38 @@ type RateSessionProps = {
   items: CollectionMovie[];
 };
 
-export function RateSession({ collection, items }: RateSessionProps) {
+export function RateSession({
+  collection,
+  items: serverItems,
+}: RateSessionProps) {
   const [hasHydrated, setHasHydrated] = useState(false);
   const votes = useVoteStore((state) => state.votes);
   const voteMovie = useVoteStore((state) => state.voteMovie);
+  const localItems = useLocalCollectionStore(
+    (state) => state.byCollection[collection.id] ?? EMPTY_LOCAL_ITEMS,
+  );
+  const items = useMemo(
+    () => mergeCollectionItems(serverItems, localItems),
+    [serverItems, localItems],
+  );
 
   useEffect(() => {
-    const unsub = useVoteStore.persist.onFinishHydration(() => {
-      setHasHydrated(true);
-    });
+    const finish = () => setHasHydrated(true);
+    const unsubVotes = useVoteStore.persist.onFinishHydration(finish);
+    const unsubLocal =
+      useLocalCollectionStore.persist.onFinishHydration(finish);
 
-    if (useVoteStore.persist.hasHydrated()) {
+    if (
+      useVoteStore.persist.hasHydrated() &&
+      useLocalCollectionStore.persist.hasHydrated()
+    ) {
       setHasHydrated(true);
     }
 
-    return unsub;
+    return () => {
+      unsubVotes();
+      unsubLocal();
+    };
   }, []);
 
   const collectionVotes = votes.filter(
@@ -44,48 +71,62 @@ export function RateSession({ collection, items }: RateSessionProps) {
     (item) => !isMovieRated(item.movie.id, collectionVotes),
   );
   const current = unratedItems[0];
+  const progress = total > 0 ? Math.round((rated / total) * 100) : 0;
 
   function handleVote(vote: VoteValue) {
-    if (!current) return;
+    if (!current || !collection.id || !current.movie.id) return;
     voteMovie(collection.id, current.movie.id, vote);
   }
 
   if (!hasHydrated) {
     return (
-      <div className="mx-auto flex w-full max-w-lg items-center justify-center py-24">
-        <p className="text-sm text-netflix-muted">Loading ratings...</p>
+      <div className="mx-auto w-full max-w-lg py-8">
+        <MovieDetailSkeleton />
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-lg">
+    <FadeIn className="mx-auto w-full max-w-lg">
       <div className="mb-6 flex items-center justify-between gap-4">
         <Link
           href={`/collection/${collection.id}`}
-          className="inline-flex items-center gap-2 text-sm font-medium text-netflix-muted transition-colors hover:text-white"
+          prefetch
+          className="btn-ghost -ml-3 inline-flex items-center gap-2"
         >
           <span aria-hidden="true">←</span>
           {collection.name}
         </Link>
         {total > 0 && (
-          <p className="text-sm font-semibold text-netflix-muted">
+          <p className="text-sm font-medium text-netflix-muted">
             {rated} of {total} rated
           </p>
         )}
       </div>
 
+      {total > 0 && (
+        <div className="mb-6 h-1 overflow-hidden rounded-full bg-white/[0.06]">
+          <motion.div
+            className="h-full rounded-full bg-netflix-red"
+            initial={false}
+            animate={{ width: `${progress}%` }}
+            transition={{ duration: MOTION.durationSlow, ease: MOTION.ease }}
+          />
+        </div>
+      )}
+
       {total === 0 ? (
-        <div className="space-y-4">
+        <div>
           <EmptyState
-            emoji="🎬"
+            icon={<Film className="size-7" strokeWidth={1.5} />}
             title="Nothing to rate"
             description="Add movies to this collection first, then come back to rate them."
           />
           <div className="text-center">
             <Link
               href={`/collection/${collection.id}`}
-              className="inline-flex rounded-xl bg-netflix-red px-6 py-3 text-sm font-bold uppercase tracking-wide text-white transition-colors hover:bg-netflix-red-hover"
+              prefetch
+              className="btn-primary"
             >
               Back to Collection
             </Link>
@@ -97,13 +138,23 @@ export function RateSession({ collection, items }: RateSessionProps) {
           collectionName={collection.name}
         />
       ) : (
-        <RateMovieCard
-          key={current.movie.id}
-          movie={current.movie}
-          source={current.source}
-          onVote={handleVote}
-        />
+        <AnimatePresence mode="wait">
+          <motion.div
+            key={current.movie.id}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={{ duration: MOTION.duration, ease: MOTION.ease }}
+          >
+            <RateMovieCard
+              movie={current.movie}
+              source={current.source}
+              metadata={current.metadata}
+              onVote={handleVote}
+            />
+          </motion.div>
+        </AnimatePresence>
       )}
-    </div>
+    </FadeIn>
   );
 }

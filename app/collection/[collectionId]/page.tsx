@@ -1,8 +1,7 @@
 import { notFound } from "next/navigation";
-import { CollectionDetailClient } from "@/components/collections/collection-detail-client";
+import { CollectionPageClient } from "@/components/collections/collection-page-client";
 import { PageShell } from "@/components/page-shell";
 import { collectionService } from "@/lib/services/collection-service";
-import { movieService } from "@/lib/services/movie-service";
 
 type CollectionPageProps = {
   params: Promise<{ collectionId: string }>;
@@ -10,19 +9,18 @@ type CollectionPageProps = {
 
 export default async function CollectionPage({ params }: CollectionPageProps) {
   const { collectionId } = await params;
-  const collection = collectionService.getById(collectionId);
 
-  if (!collection) {
+  if (!collectionId) {
     notFound();
   }
 
-  const initialItems = movieService.getCollectionMovies(collection.items);
+  const collection = collectionService.getById(collectionId) ?? null;
 
   return (
     <PageShell wide top>
-      <CollectionDetailClient
-        collection={collection}
-        initialItems={initialItems}
+      <CollectionPageClient
+        collectionId={collectionId}
+        seedCollection={collection}
       />
     </PageShell>
   );

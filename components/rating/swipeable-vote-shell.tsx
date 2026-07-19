@@ -39,7 +39,7 @@ export function SwipeableVoteShell({
         ? Math.max(window.innerWidth * 1.1, 480)
         : -Math.max(window.innerWidth * 1.1, 480);
 
-    await animate(x, exitX, { duration: 0.28, ease: "easeIn" });
+    await animate(x, exitX, { duration: 0.22, ease: [0.25, 0.1, 0.25, 1] });
     onVote(vote);
   }
 
@@ -64,7 +64,7 @@ export function SwipeableVoteShell({
       return;
     }
 
-    void animate(x, 0, { type: "spring", stiffness: 420, damping: 34 });
+    void animate(x, 0, { duration: 0.2, ease: [0.25, 0.1, 0.25, 1] });
   }
 
   return (
@@ -74,7 +74,7 @@ export function SwipeableVoteShell({
       dragConstraints={{ left: 0, right: 0 }}
       dragElastic={0.82}
       onDragEnd={handleDragEnd}
-      className="relative mx-auto w-full touch-pan-y rounded-2xl border border-white/5 bg-netflix-surface shadow-[0_8px_30px_rgba(0,0,0,0.45)] will-change-transform"
+      className="relative mx-auto w-full touch-pan-y rounded-2xl bg-netflix-surface shadow-[var(--shadow-card)] will-change-transform"
     >
       <motion.div
         aria-hidden="true"

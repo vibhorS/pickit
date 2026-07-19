@@ -1,5 +1,13 @@
-import { redirect } from "next/navigation";
+import { HomeClient } from "@/components/home/home-client";
+import { PageShell } from "@/components/page-shell";
+import { collectionService } from "@/lib/services/collection-service";
 
 export default function Home() {
-  redirect("/collections");
+  const seedCollections = collectionService.getAll();
+
+  return (
+    <PageShell top>
+      <HomeClient seedCollections={seedCollections} />
+    </PageShell>
+  );
 }

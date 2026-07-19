@@ -2,58 +2,55 @@
 
 import { useEffect, useState } from "react";
 import { TonightSession } from "@/components/tonight/tonight-session";
-import { getMutualMatchMovies } from "@/lib/match-engine";
-import type { Movie, MovieVote } from "@/lib/types";
-import { CURRENT_USER } from "@/lib/users";
+import { MovieDetailSkeleton } from "@/components/ui/skeleton";
+import { useCollectionStats } from "@/store/collection-stats-selector";
+import { useLocalCollectionStore } from "@/store/local-collection-store";
 import { useVoteStore } from "@/store/vote-store";
 
 type TonightSessionClientProps = {
   collectionId: string;
   collectionName: string;
-  movies: Movie[];
-  partnerVotes: MovieVote[];
 };
 
 export function TonightSessionClient({
   collectionId,
   collectionName,
-  movies,
-  partnerVotes,
 }: TonightSessionClientProps) {
   const [hasHydrated, setHasHydrated] = useState(false);
-  const votes = useVoteStore((state) => state.votes);
+  const stats = useCollectionStats(collectionId);
 
   useEffect(() => {
-    const unsub = useVoteStore.persist.onFinishHydration(() => {
-      setHasHydrated(true);
-    });
+    const finish = () => setHasHydrated(true);
+    const unsubVotes = useVoteStore.persist.onFinishHydration(finish);
+    const unsubLocal =
+      useLocalCollectionStore.persist.onFinishHydration(finish);
 
-    if (useVoteStore.persist.hasHydrated()) {
-      setHasHydrated(true);
+    if (
+      useVoteStore.persist.hasHydrated() &&
+      useLocalCollectionStore.persist.hasHydrated()
+    ) {
+      queueMicrotask(finish);
     }
 
-    return unsub;
+    return () => {
+      unsubVotes();
+      unsubLocal();
+    };
   }, []);
 
   if (!hasHydrated) {
     return (
-      <div className="mx-auto flex w-full max-w-lg items-center justify-center py-24">
-        <p className="text-sm text-netflix-muted">Loading tonight&apos;s picks...</p>
+      <div className="mx-auto w-full max-w-lg py-8">
+        <MovieDetailSkeleton />
       </div>
     );
   }
-
-  const userVotes = votes.filter(
-    (vote) =>
-      vote.collectionId === collectionId && vote.userId === CURRENT_USER.id,
-  );
-  const matches = getMutualMatchMovies(movies, userVotes, partnerVotes);
 
   return (
     <TonightSession
       collectionId={collectionId}
       collectionName={collectionName}
-      matches={matches}
+      matches={stats.mutualMatchMovies}
     />
   );
 }
