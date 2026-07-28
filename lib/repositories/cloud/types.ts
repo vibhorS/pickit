@@ -4,6 +4,7 @@ import type { AppearancePreference } from "@/store/settings-store";
 export type CloudList = {
   id: string;
   ownerId: string;
+  crewId?: string | null;
   name: string;
   emoji: string;
   description?: string | null;
@@ -91,17 +92,17 @@ export type MovieRepository = {
 
 export type ListRepository = {
   listForOwner(ownerId: string): Promise<CloudList[]>;
+  listForCrew(crewId: string): Promise<CloudList[]>;
   getById(id: string): Promise<CloudList | null>;
   upsert(list: CloudList): Promise<CloudList>;
   softDelete(id: string, userId: string): Promise<void>;
-  subscribe(
-    ownerId: string,
-    onChange: () => void,
-  ): () => void;
+  subscribe(ownerId: string, onChange: () => void): () => void;
+  subscribeCrew(crewId: string, onChange: () => void): () => void;
 };
 
 export type RecommendationRepository = {
   listForOwner(ownerId: string): Promise<CloudRecommendation[]>;
+  listForListIds(listIds: string[]): Promise<CloudRecommendation[]>;
   listForList(listId: string): Promise<CloudRecommendation[]>;
   upsert(item: CloudRecommendation): Promise<CloudRecommendation>;
   softDelete(listId: string, movieId: string, userId: string): Promise<void>;
@@ -110,6 +111,7 @@ export type RecommendationRepository = {
 
 export type RatingRepository = {
   listForUser(userId: string): Promise<CloudRating[]>;
+  listForListIds(listIds: string[]): Promise<CloudRating[]>;
   upsert(rating: CloudRating): Promise<CloudRating>;
   remove(listId: string, movieId: string, userId: string): Promise<void>;
   subscribe(userId: string, onChange: () => void): () => void;
@@ -133,6 +135,7 @@ export type CloudRepositories = {
   ratings: RatingRepository;
   preferences: PreferencesRepository;
   migrations: MigrationRepository;
+  crew: import("@/lib/repositories/cloud/crew-repository").CrewRepository;
 };
 
 export function cloudRatingToMovieVote(rating: CloudRating): MovieVote {

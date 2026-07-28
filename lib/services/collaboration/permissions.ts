@@ -56,6 +56,7 @@ const PARTNER_ACTIONS: PermissionAction[] = [
   "list.view",
   "list.edit",
   "list.rename",
+  "list.archive",
   "list.duplicate",
   "recommendation.add",
   "recommendation.remove",
@@ -65,9 +66,15 @@ const PARTNER_ACTIONS: PermissionAction[] = [
   "movie-night.start",
 ];
 
+/** Crew members share lists fully; delete stays owner-only. */
 const MEMBER_ACTIONS: PermissionAction[] = [
   "list.view",
+  "list.edit",
+  "list.rename",
+  "list.archive",
+  "list.duplicate",
   "recommendation.add",
+  "recommendation.remove",
   "recommendation.edit-note",
   "rating.write",
   "rating.read",

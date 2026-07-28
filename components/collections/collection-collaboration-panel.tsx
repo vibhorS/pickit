@@ -1,9 +1,12 @@
 "use client";
 
-import { Check, Copy, UserPlus, X } from "lucide-react";
+import { Check, Copy, Users } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { getCollectionSharingState } from "@/lib/collaboration";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { useCollaborationStore } from "@/store/collaboration-store";
+import { useCrewStore } from "@/store/crew-store";
 
 type CollectionCollaborationPanelProps = {
   collectionId: string;
@@ -15,24 +18,19 @@ export function CollectionCollaborationPanel({
   const [hydrated, setHydrated] = useState(false);
   const [copied, setCopied] = useState(false);
   const users = useCollaborationStore((state) => state.users);
-  const memberships = useCollaborationStore(
-    (state) => state.memberships,
-  );
-  const invitations = useCollaborationStore(
-    (state) => state.invitations,
-  );
-  const activeUserId = useCollaborationStore(
-    (state) => state.activeUserId,
-  );
+  const memberships = useCollaborationStore((state) => state.memberships);
+  const invitations = useCollaborationStore((state) => state.invitations);
+  const activeUserId = useCollaborationStore((state) => state.activeUserId);
   const createInvitation = useCollaborationStore(
     (state) => state.createInvitation,
   );
-  const ensureOwner = useCollaborationStore(
-    (state) => state.ensureOwner,
-  );
+  const ensureOwner = useCollaborationStore((state) => state.ensureOwner);
   const revokeInvitation = useCollaborationStore(
     (state) => state.revokeInvitation,
   );
+  const crew = useCrewStore((state) => state.crew);
+  const crewMembers = useCrewStore((state) => state.members);
+  const pendingCrewInvite = useCrewStore((state) => state.pendingInvite);
 
   useEffect(() => {
     const finish = () => setHydrated(true);
@@ -57,6 +55,98 @@ export function CollectionCollaborationPanel({
   }, [collectionId, ensureOwner, hydrated, memberships]);
 
   if (!hydrated) return null;
+
+  if (isSupabaseConfigured() && crew) {
+    const inviteUrl = pendingCrewInvite
+      ? `${typeof window !== "undefined" ? window.location.origin : ""}/invite/crew/${pendingCrewInvite.token}`
+      : null;
+
+    async function handleCopy() {
+      if (!inviteUrl) return;
+      try {
+        await navigator.clipboard.writeText(inviteUrl);
+        setCopied(true);
+      } catch {
+        setCopied(false);
+      }
+    }
+
+    return (
+      <section className="mt-7 max-w-3xl rounded-2xl bg-white/[0.025] px-4 py-4 sm:px-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <div className="flex items-center gap-3">
+              <p className="text-xs font-medium uppercase tracking-[0.16em] text-netflix-muted/75">
+                Crew Members
+              </p>
+              <span className="text-[0.65rem] text-emerald-400/90">
+                Shared with Crew
+              </span>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {crewMembers.map((member) => {
+                const name = member.profile?.displayName ?? "Member";
+                const active = member.userId === activeUserId;
+                return (
+                  <span
+                    key={member.id}
+                    className={`inline-flex items-center gap-2 rounded-full px-2.5 py-1.5 text-sm transition ${
+                      active
+                        ? "bg-white/[0.12] text-white"
+                        : "bg-white/[0.04] text-netflix-muted"
+                    }`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      className="flex size-6 items-center justify-center rounded-full text-[0.65rem] font-semibold text-white"
+                      style={{
+                        backgroundColor:
+                          member.profile?.color ?? "rgba(229,9,20,0.35)",
+                      }}
+                    >
+                      {name.slice(0, 1).toUpperCase()}
+                    </span>
+                    {name}
+                    {member.role === "owner" && (
+                      <span className="text-[0.625rem] uppercase tracking-wide text-netflix-muted/60">
+                        Owner
+                      </span>
+                    )}
+                    {active && (
+                      <span className="text-[0.625rem] text-white/45">You</span>
+                    )}
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {inviteUrl && (
+              <button
+                type="button"
+                onClick={() => void handleCopy()}
+                className="inline-flex items-center gap-2 rounded-xl bg-white/[0.06] px-3 py-2 text-sm text-white"
+              >
+                {copied ? (
+                  <Check className="size-4 text-emerald-400" />
+                ) : (
+                  <Copy className="size-4" />
+                )}
+                {copied ? "Copied" : "Copy Crew invite"}
+              </button>
+            )}
+            <Link
+              href="/crew"
+              className="inline-flex items-center gap-2 rounded-xl bg-netflix-red/90 px-3 py-2 text-sm font-medium text-white"
+            >
+              <Users className="size-4" aria-hidden="true" />
+              Your Crew
+            </Link>
+          </div>
+        </div>
+      </section>
+    );
+  }
 
   const collectionMemberships = memberships.filter(
     (membership) => membership.collectionId === collectionId,
@@ -137,9 +227,7 @@ export function CollectionCollaborationPanel({
                     </span>
                   )}
                   {active && (
-                    <span className="text-[0.625rem] text-white/45">
-                      You
-                    </span>
+                    <span className="text-[0.625rem] text-white/45">You</span>
                   )}
                 </span>
               );
@@ -147,51 +235,44 @@ export function CollectionCollaborationPanel({
           </div>
         </div>
 
-        {canInvite && <div className="shrink-0">
-          {pendingInvite ? (
-            <div className="max-w-xs space-y-2 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="font-medium text-amber-200">
-                  Pending Invite
-                </span>
+        {canInvite && (
+          <div className="shrink-0">
+            {!pendingInvite ? (
+              <button
+                type="button"
+                onClick={handleInvite}
+                className="inline-flex items-center gap-2 rounded-xl bg-netflix-red/90 px-3 py-2 text-sm font-medium text-white"
+              >
+                <Users className="size-4" aria-hidden="true" />
+                Invite
+              </button>
+            ) : (
+              <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
                   onClick={() => void handleCopy()}
-                  className="btn-ghost min-h-9 gap-1.5 px-3 py-1.5"
+                  className="inline-flex items-center gap-2 rounded-xl bg-white/[0.06] px-3 py-2 text-sm text-white"
                 >
                   {copied ? (
-                    <Check className="size-3.5" />
+                    <Check className="size-4 text-emerald-400" />
                   ) : (
-                    <Copy className="size-3.5" />
+                    <Copy className="size-4" />
                   )}
-                  {copied ? "Copied" : "Copy Link"}
+                  {copied ? "Copied" : "Copy link"}
                 </button>
                 <button
                   type="button"
                   onClick={() =>
-                    revokeInvitation(pendingInvite.id)
+                    pendingInvite && revokeInvitation(pendingInvite.id)
                   }
-                  aria-label="Cancel pending invitation"
-                  className="btn-ghost min-h-9 px-2.5 py-1.5"
+                  className="rounded-xl px-3 py-2 text-sm text-netflix-muted"
                 >
-                  <X className="size-3.5" />
+                  Cancel
                 </button>
               </div>
-              <code className="block truncate text-netflix-muted/60">
-                {inviteUrl}
-              </code>
-            </div>
-          ) : (
-            <button
-              type="button"
-              onClick={handleInvite}
-              className="btn-ghost min-h-10 gap-2 px-3"
-            >
-              <UserPlus className="size-4" />
-              {members.length > 1 ? "Invite Another" : "Invite Member"}
-            </button>
-          )}
-        </div>}
+            )}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -204,21 +285,15 @@ function SharingStatus({
 }) {
   if (state === "connected") {
     return (
-      <span className="text-xs font-medium text-emerald-300/85">
-        ● Connected
-      </span>
+      <span className="text-[0.65rem] text-emerald-400/90">Connected</span>
     );
   }
   if (state === "invitation-pending") {
     return (
-      <span className="text-xs font-medium text-amber-200">
-        ● Invitation Pending
-      </span>
+      <span className="text-[0.65rem] text-amber-300/90">Invite pending</span>
     );
   }
   return (
-    <span className="text-xs font-medium text-netflix-muted/65">
-      ○ Not Shared
-    </span>
+    <span className="text-[0.65rem] text-netflix-muted/70">Not shared</span>
   );
 }

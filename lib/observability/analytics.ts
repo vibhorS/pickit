@@ -10,6 +10,7 @@ export type AnalyticsEventName =
   | "movie_picked"
   | "movie_night_completed"
   | "partner_connected"
+  | "crew_connected"
   | "search_performed"
   | "decision_mode_selected"
   | "auth_signed_in"

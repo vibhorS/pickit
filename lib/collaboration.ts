@@ -30,7 +30,8 @@ export function getCollectionSharingState(
 }
 
 /**
- * Per-movie rating presentation for collaborative UI.
+ * Per-movie rating presentation for collaborative Crew UI.
+ * `partnerUserId` is the other Crew member (kept for API compatibility).
  */
 export function getRatingDisplayState(input: {
   movieId: string;
@@ -46,41 +47,48 @@ export function getRatingDisplayState(input: {
       r.userId === input.currentUserId &&
       !r.deletedAt,
   );
-  const partnerId = input.partnerUserId;
-  const theirs = partnerId
+  const otherId = input.partnerUserId;
+  const theirs = otherId
     ? input.ratings.find(
         (r) =>
           r.collectionId === input.collectionId &&
           r.movieId === input.movieId &&
-          r.userId === partnerId &&
+          r.userId === otherId &&
           !r.deletedAt,
       )
     : undefined;
 
   if (!mine && !theirs) return "not-rated";
-  if (mine && !theirs && partnerId) return "waiting-on-partner";
+  if (mine && !theirs && otherId) return "waiting-on-partner";
   if (!mine && theirs) return "partner";
   if (mine && theirs) {
     if (mine.vote === "like" && theirs.vote === "like") return "mutual-match";
+    if (mine.vote === "pass" && theirs.vote === "pass") return "mismatch";
     return "mismatch";
   }
   if (mine) return "yours";
   return "not-rated";
 }
 
-export function formatRatingStateLabel(state: RatingDisplayState): string {
+export function formatRatingStateLabel(
+  state: RatingDisplayState,
+  votes?: { mine?: "like" | "pass"; theirs?: "like" | "pass" },
+): string {
   switch (state) {
     case "yours":
       return "Your rating";
     case "partner":
-      return "Partner rated";
+      return "Crew member rated";
     case "waiting-on-partner":
-      return "Waiting on partner";
+      return "Waiting";
     case "not-rated":
       return "Not rated";
     case "mutual-match":
-      return "Mutual match";
+      return "Mutual Like";
     case "mismatch":
+      if (votes?.mine === "pass" && votes?.theirs === "pass") {
+        return "Mutual Dislike";
+      }
       return "Different picks";
   }
 }
@@ -91,6 +99,6 @@ export function memberLabel(
   partnerUserId?: string | null,
 ): string {
   if (user.id === currentUserId) return "You";
-  if (partnerUserId && user.id === partnerUserId) return "Partner";
+  if (partnerUserId && user.id === partnerUserId) return user.name;
   return user.name;
 }

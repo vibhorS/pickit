@@ -139,6 +139,43 @@ export const useVoteStore = create<VoteStore>()(
               },
             );
           }
+          void import("@/store/crew-store").then(({ useCrewStore }) => {
+            const crew = useCrewStore.getState().crew;
+            if (!crew) return;
+            void import("@/lib/services/crew/crew-service").then(
+              async ({ crewService }) => {
+                await crewService.recordActivity({
+                  crewId: crew.id,
+                  userId: ratingUserId,
+                  type: "movie-rated",
+                  listId: collectionId,
+                  movieId,
+                  summary: `Rated a movie ${vote === "like" ? "❤️" : ""}`.trim(),
+                });
+                await crewService.setPresence(
+                  ratingUserId,
+                  "rating",
+                  crew.id,
+                  collectionId,
+                );
+                const others = useCrewStore
+                  .getState()
+                  .otherMembers(ratingUserId);
+                const repos = await import("@/lib/repositories/cloud").then(
+                  (m) => m.getCloudRepositories(),
+                );
+                for (const member of others) {
+                  await repos.crew.notify({
+                    userId: member.userId,
+                    crewId: crew.id,
+                    listId: collectionId,
+                    type: "movie-rated",
+                    message: "A Crew member rated a movie.",
+                  });
+                }
+              },
+            );
+          });
         });
         void import("@/lib/events/bus").then(({ createEventId, domainEventBus }) => {
           domainEventBus.publish({

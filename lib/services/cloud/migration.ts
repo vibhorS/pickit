@@ -82,6 +82,19 @@ export async function migrateLocalDataToSupabase(userId: string): Promise<{
     return { migrated: false, lists: 0, ratings: 0, recommendations: 0 };
   }
 
+  // Ensure personal Crew exists before attaching lists
+  let crewId: string | null = null;
+  try {
+    const profile = await repos.auth.getProfile();
+    const crew = await repos.crew.ensurePersonalCrew(
+      userId,
+      profile?.displayName ?? "My",
+    );
+    crewId = crew.id;
+  } catch {
+    crewId = null;
+  }
+
   const legacyCollections = safeParse<LegacyCollections>(
     window.localStorage.getItem("decision-local-collections"),
   );
@@ -108,6 +121,7 @@ export async function migrateLocalDataToSupabase(userId: string): Promise<{
     lists.push({
       id: collection.id,
       ownerId: userId,
+      crewId,
       name: override?.name ?? collection.name,
       emoji: override?.emoji ?? collection.emoji,
       description: collection.description ?? null,
@@ -166,6 +180,7 @@ export async function migrateLocalDataToSupabase(userId: string): Promise<{
     lists.push({
       id: collectionId,
       ownerId: userId,
+      crewId,
       name: override?.name ?? collectionId,
       emoji: override?.emoji ?? "🎬",
       description: null,
@@ -285,7 +300,7 @@ export async function migrateLocalDataToSupabase(userId: string): Promise<{
   };
 }
 
-/** Hydrate Zustand in-memory stores from cloud (no local persist as source of truth). */
+/** Hydrate Zustand in-memory stores from cloud (Crew-scoped). */
 export async function loadCloudSnapshot(userId: string): Promise<{
   lists: Collection[];
   votes: MovieVote[];
@@ -299,13 +314,61 @@ export async function loadCloudSnapshot(userId: string): Promise<{
       addedAt: string;
     }>
   >;
+  crewId: string | null;
+  memberProfiles: Array<{
+    id: string;
+    name: string;
+    email?: string;
+    avatarUrl?: string;
+    color?: string;
+  }>;
+  memberships: Array<{
+    id: string;
+    collectionId: string;
+    userId: string;
+    role: "owner" | "member";
+    joinedAt: string;
+  }>;
 }> {
   const repos = getCloudRepositories();
-  const [lists, recommendations, ratings] = await Promise.all([
-    repos.lists.listForOwner(userId),
-    repos.recommendations.listForOwner(userId),
-    repos.ratings.listForUser(userId),
+  const crew = await repos.crew.getActiveCrewForUser(userId);
+  const crewId = crew?.id ?? null;
+
+  let lists = crewId
+    ? await repos.lists.listForCrew(crewId)
+    : await repos.lists.listForOwner(userId);
+
+  // Include any orphan owned lists not yet attached
+  if (crewId) {
+    const owned = await repos.lists.listForOwner(userId);
+    const ids = new Set(lists.map((list) => list.id));
+    for (const list of owned) {
+      if (!ids.has(list.id)) {
+        if (!list.crewId) {
+          const attached = await repos.lists.upsert({
+            ...list,
+            crewId,
+            updatedAt: new Date().toISOString(),
+            updatedBy: userId,
+          });
+          lists.push(attached);
+        } else {
+          lists.push(list);
+        }
+      }
+    }
+  }
+
+  const listIds = lists.map((list) => list.id);
+  const [recommendations, ratings] = await Promise.all([
+    repos.recommendations.listForListIds(listIds),
+    repos.ratings.listForListIds(listIds),
   ]);
+
+  const memberProfilesRaw = crewId
+    ? await repos.crew.listMemberProfiles(crewId)
+    : [];
+  const crewMembers = crewId ? await repos.crew.listMembers(crewId) : [];
 
   const movieIds = [
     ...new Set([
@@ -349,6 +412,7 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     emoji: list.emoji,
     description: list.description ?? undefined,
     ownerId: list.ownerId,
+    householdId: list.crewId,
     createdBy: list.createdBy,
     updatedBy: list.updatedBy,
     createdAt: list.createdAt,
@@ -377,5 +441,34 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     deletedAt: rating.deletedAt,
   }));
 
-  return { lists: collectionLists, votes, byCollection };
+  const memberProfiles = memberProfilesRaw.map((profile) => ({
+    id: profile.id,
+    name: profile.displayName,
+    email: profile.email ?? undefined,
+    avatarUrl: profile.avatarUrl ?? undefined,
+    color: profile.color,
+  }));
+
+  // Membership per list for stats selector (every crew member on every crew list)
+  const memberships = lists.flatMap((list) =>
+    crewMembers.map((member) => ({
+      id: `membership-${list.id}-${member.userId}`,
+      collectionId: list.id,
+      userId: member.userId,
+      role:
+        member.role === "owner" && list.ownerId === member.userId
+          ? ("owner" as const)
+          : ("member" as const),
+      joinedAt: member.joinedAt,
+    })),
+  );
+
+  return {
+    lists: collectionLists,
+    votes,
+    byCollection,
+    crewId,
+    memberProfiles,
+    memberships,
+  };
 }

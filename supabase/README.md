@@ -1,4 +1,4 @@
-# Phase 2A — Cloud Foundation Setup
+# Cloud Foundation + Crew Collaboration Setup
 
 ## 1. Create a Supabase project
 
@@ -17,9 +17,12 @@ TMDB_API_KEY=...
 
 ## 3. Apply schema
 
-In the Supabase SQL editor, run:
+In the Supabase SQL editor, run in order:
 
-`supabase/migrations/20260729_phase2a_cloud_foundation.sql`
+1. `supabase/migrations/20260729_phase2a_cloud_foundation.sql`
+2. `supabase/migrations/20260729_phase2b_crew_collaboration.sql`
+
+Enable Realtime for: `lists`, `recommendations`, `ratings`, `crew_members`, `crew_activity`, `presence` (migration adds publication entries when supported).
 
 ## 4. Auth settings
 
@@ -29,13 +32,18 @@ In Authentication → Providers:
 - Enable Anonymous (for Guest mode)
 - Optionally enable Google (Apple later)
 
-## 5. Seed demo data
+## 5. Seed demo Crew
 
 ```bash
 npm run db:seed
 ```
 
-Login: `alex@pickit.demo` / `pickit-demo-123`
+Logins (password `pickit-demo-123`):
+
+- `alex@pickit.demo` — Crew owner
+- `jordan@pickit.demo` — Crew member
+
+Both share Date Night with mutual likes for Movie Night QA.
 
 Reset app tables (keeps auth users):
 
@@ -43,15 +51,24 @@ Reset app tables (keeps auth users):
 npm run db:reset
 ```
 
+## 6. Crew QA (two browsers)
+
+1. Sign in as Alex and Jordan (or create two accounts)
+2. Alex: Profile → Crew → Invite to Crew → copy link
+3. Jordan: open invite link → Accept
+4. Add a recommendation / rate a movie on either side — lists and readiness update live
+5. Start Movie Night from a shared list
+
+In-app developer tools (Profile → Developer): Seed Movies, Seed Movie Night, Seed Activity, Reset Crew.
+
 ## Architecture
 
 ```
-UI → Hooks (TanStack Query) → Repositories → Supabase
+UI → Hooks / Services → Repositories → Supabase
 ```
 
-UI components must not import `@/lib/supabase/client`.
+UI components must not import `@/lib/supabase/client` for data writes — use Crew/list/rating services and stores.
 
 ## Migration
 
-On first authenticated session, local Zustand data is imported into Supabase once.
-After that, Supabase is canonical; the offline queue only holds pending writes.
+On first authenticated session, local Zustand data is imported into Supabase once and attached to a personal Crew. After that, Supabase is canonical; the offline queue only holds pending writes.

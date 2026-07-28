@@ -11,6 +11,7 @@ import type {
 } from "@/lib/types";
 import { DEFAULT_OWNER } from "@/lib/users";
 import { useCollaborationStore } from "@/store/collaboration-store";
+import { useCrewStore } from "@/store/crew-store";
 
 /** Stable empty snapshot — never return a fresh [] from a Zustand selector. */
 export const EMPTY_LOCAL_ITEMS: CollectionMovie[] = [];
@@ -81,7 +82,16 @@ function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function canManageCollection(collectionId: string): boolean {
+function canEditCollection(collectionId: string): boolean {
+  const collaboration = useCollaborationStore.getState();
+  return collaboration.memberships.some(
+    (membership) =>
+      membership.collectionId === collectionId &&
+      membership.userId === collaboration.activeUserId,
+  );
+}
+
+function canDeleteCollection(collectionId: string): boolean {
   const collaboration = useCollaborationStore.getState();
   return collaboration.memberships.some(
     (membership) =>
@@ -272,6 +282,33 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                     payload: rec,
                   });
                 }
+                const { useCrewStore } = await import("@/store/crew-store");
+                const crew = useCrewStore.getState().crew;
+                if (crew) {
+                  const { crewService } = await import(
+                    "@/lib/services/crew/crew-service"
+                  );
+                  await crewService.recordActivity({
+                    crewId: crew.id,
+                    userId: addedByUserId,
+                    type: "movie-added",
+                    listId: collectionId,
+                    movieId: movie.id,
+                    summary: `Added ${movie.title}`,
+                  });
+                  const others = useCrewStore
+                    .getState()
+                    .otherMembers(addedByUserId);
+                  for (const member of others) {
+                    await repos.crew.notify({
+                      userId: member.userId,
+                      crewId: crew.id,
+                      listId: collectionId,
+                      type: "recommendation-added",
+                      message: `${movie.title} was added to a shared list.`,
+                    });
+                  }
+                }
               },
             );
           });
@@ -285,6 +322,7 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
         const collaboration = useCollaborationStore.getState();
         const now = new Date().toISOString();
         const ownerId = collaboration.activeUserId;
+        const crewId = useCrewStore.getState().crew?.id ?? null;
         const collection: Collection = {
           id: newId("collection"),
           name: trimmed || "Untitled",
@@ -292,6 +330,7 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
           description: "Created from Capture",
           items: [],
           ownerId,
+          householdId: crewId,
           createdBy: ownerId,
           updatedBy: ownerId,
           createdAt: now,
@@ -303,6 +342,26 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
           createdCollections: [collection, ...state.createdCollections],
         }));
         collaboration.ensureOwner(collection.id);
+        const crewMembers = useCrewStore.getState().members;
+        if (crewId && crewMembers.length) {
+          useCollaborationStore.setState((state) => ({
+            memberships: [
+              ...state.memberships.filter(
+                (m) => m.collectionId !== collection.id,
+              ),
+              ...crewMembers.map((member) => ({
+                id: `membership-${collection.id}-${member.userId}`,
+                collectionId: collection.id,
+                userId: member.userId,
+                role:
+                  member.role === "owner" && member.userId === ownerId
+                    ? ("owner" as const)
+                    : ("member" as const),
+                joinedAt: member.joinedAt,
+              })),
+            ],
+          }));
+        }
         void import("@/lib/events/bus").then(({ createEventId, domainEventBus }) => {
           domainEventBus.publish({
             id: createEventId(),
@@ -318,6 +377,7 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
           const list = {
             id: collection.id,
             ownerId,
+            crewId,
             name: collection.name,
             emoji: collection.emoji,
             description: collection.description ?? null,
@@ -342,6 +402,18 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
               if (navigator.onLine) {
                 await getCloudRepositories().lists.upsert(list);
               }
+              if (crewId) {
+                const { crewService } = await import(
+                  "@/lib/services/crew/crew-service"
+                );
+                await crewService.recordActivity({
+                  crewId,
+                  userId: ownerId,
+                  type: "list-created",
+                  listId: collection.id,
+                  summary: `New list created: ${collection.name}`,
+                });
+              }
             },
           );
         });
@@ -354,7 +426,7 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
         if (
           !collectionId ||
           !trimmedName ||
-          !canManageCollection(collectionId)
+          !canEditCollection(collectionId)
         ) {
           return;
         }
@@ -371,7 +443,7 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
       },
 
       deleteCollection: (collectionId) => {
-        if (!collectionId || !canManageCollection(collectionId)) {
+        if (!collectionId || !canDeleteCollection(collectionId)) {
           return;
         }
         set((state) => ({
@@ -389,7 +461,7 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
         if (
           !collectionId ||
           !movieId ||
-          !canManageCollection(collectionId)
+          !canEditCollection(collectionId)
         ) {
           return;
         }

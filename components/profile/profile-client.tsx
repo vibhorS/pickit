@@ -12,10 +12,13 @@ import {
   Scale,
   Shield,
   Trash2,
+  Users,
   Wrench,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { CrewPanel } from "@/components/crew/crew-panel";
 import { PartnerPanel } from "@/components/partner/partner-panel";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -75,6 +78,7 @@ const UTILITIES = [
 
 type SettingsSection =
   | "profile"
+  | "crew"
   | "partner"
   | "appearance"
   | "privacy"
@@ -132,13 +136,18 @@ export function ProfileClient() {
     icon: typeof Info;
   }> = [
     { id: "profile", label: "Profile", icon: Info },
-    { id: "partner", label: "Partner", icon: MessageSquare },
+    { id: "crew", label: "Crew", icon: Users },
+  ];
+  if (!isSupabaseConfigured()) {
+    navItems.push({ id: "partner", label: "Partner", icon: MessageSquare });
+  }
+  navItems.push(
     { id: "appearance", label: "Appearance", icon: Moon },
     { id: "privacy", label: "Privacy", icon: Shield },
     { id: "feedback", label: "Feedback", icon: Bug },
     { id: "about", label: "About", icon: Scale },
     { id: "developer", label: "Developer", icon: Wrench },
-  ];
+  );
 
   return (
     <>
@@ -294,7 +303,8 @@ export function ProfileClient() {
           </section>
         )}
 
-        {section === "partner" && <PartnerPanel />}
+        {section === "crew" && <CrewPanel />}
+        {section === "partner" && !isSupabaseConfigured() && <PartnerPanel />}
 
         {section === "appearance" && (
           <section className="mt-10 space-y-4">
@@ -501,6 +511,86 @@ export function ProfileClient() {
                     </p>
                   </button>
                 </div>
+                {isSupabaseConfigured() && (
+                  <div className="mt-6">
+                    <h3 className="text-sm font-semibold text-white">
+                      Crew cloud tools
+                    </h3>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      {(
+                        [
+                          {
+                            label: "Seed Movies",
+                            description: "Upsert demo TMDb movies.",
+                            run: async () => {
+                              const { crewDemoTools } = await import(
+                                "@/lib/services/crew/demo-tools"
+                              );
+                              await crewDemoTools.seedMovies();
+                            },
+                          },
+                          {
+                            label: "Seed Movie Night",
+                            description:
+                              "Create list + recs + ratings + activity.",
+                            run: async () => {
+                              const { crewDemoTools } = await import(
+                                "@/lib/services/crew/demo-tools"
+                              );
+                              await crewDemoTools.seedMovieNight(profile.id);
+                            },
+                          },
+                          {
+                            label: "Seed Activity",
+                            description:
+                              "Append a Movie Night completed event.",
+                            run: async () => {
+                              const { crewDemoTools } = await import(
+                                "@/lib/services/crew/demo-tools"
+                              );
+                              await crewDemoTools.seedActivity(profile.id);
+                            },
+                          },
+                          {
+                            label: "Reset Crew",
+                            description:
+                              "Rename Crew and cancel pending invite.",
+                            run: async () => {
+                              const { crewDemoTools } = await import(
+                                "@/lib/services/crew/demo-tools"
+                              );
+                              await crewDemoTools.resetCrew(profile.id);
+                            },
+                          },
+                        ] as const
+                      ).map((utility) => (
+                        <button
+                          key={utility.label}
+                          type="button"
+                          onClick={() => {
+                            void utility.run().then(
+                              () => setToast(`${utility.label} complete`),
+                              (err: unknown) =>
+                                setToast(
+                                  err instanceof Error
+                                    ? err.message
+                                    : `${utility.label} failed`,
+                                ),
+                            );
+                          }}
+                          className="rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left hover:bg-white/[0.06]"
+                        >
+                          <p className="text-sm font-medium text-white">
+                            {utility.label}
+                          </p>
+                          <p className="mt-1 text-xs text-netflix-muted">
+                            {utility.description}
+                          </p>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </>
             )}
           </section>

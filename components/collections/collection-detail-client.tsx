@@ -487,15 +487,19 @@ export function CollectionDetailClient({
                                 member.id,
                               ),
                             }))}
-                            addedByName={
-                              item.addedByUserId === currentUser.id
-                                ? "you"
-                                : members.find(
-                                    (member) =>
-                                      member.id ===
-                                      item.addedByUserId,
-                                  )?.name ?? "a member"
-                            }
+                            addedByName={(() => {
+                              const adderName =
+                                item.addedByUserId === currentUser.id
+                                  ? "you"
+                                  : members.find(
+                                      (member) =>
+                                        member.id === item.addedByUserId,
+                                    )?.name ?? "a member";
+                              const sourceLabel = item.source?.label?.trim();
+                              return sourceLabel
+                                ? `Added by ${adderName} • ${sourceLabel}`
+                                : `Added by ${adderName}`;
+                            })()}
                             onOpen={handleOpenMovie}
                           />
                         </div>

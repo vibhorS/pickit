@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Home, Library, UserRound } from "lucide-react";
+import { Home, Library, UserRound, Users } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthBootstrap } from "@/components/auth/auth-bootstrap";
@@ -116,6 +116,12 @@ function BottomNavigation({ pathname }: { pathname: string }) {
       active:
         pathname === "/collections" ||
         pathname.startsWith("/collection/"),
+    },
+    {
+      href: "/crew",
+      label: "Crew",
+      icon: Users,
+      active: pathname === "/crew" || pathname.startsWith("/crew"),
     },
     {
       href: "/profile",

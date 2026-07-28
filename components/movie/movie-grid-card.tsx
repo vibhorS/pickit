@@ -110,7 +110,9 @@ export function MovieGridCard({
         <RecommendationContext metadata={metadata} source={source} />
         {addedByName && (
           <p className="text-[0.625rem] text-netflix-muted/55">
-            Added by {addedByName}
+            {addedByName.startsWith("Added by")
+              ? addedByName
+              : `Added by ${addedByName}`}
           </p>
         )}
         <div className="flex items-start justify-between gap-2">

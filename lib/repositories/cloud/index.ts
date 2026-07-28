@@ -1,3 +1,4 @@
+import { createCrewRepository } from "@/lib/repositories/cloud/crew-repository";
 import {
   getSupabaseBrowserClient,
   isSupabaseConfigured,
@@ -48,6 +49,7 @@ function mapUser(row: {
 function mapList(row: {
   id: string;
   owner_id: string;
+  crew_id?: string | null;
   name: string;
   emoji: string;
   description: string | null;
@@ -61,6 +63,7 @@ function mapList(row: {
   return {
     id: row.id,
     ownerId: row.owner_id,
+    crewId: row.crew_id ?? null,
     name: row.name,
     emoji: row.emoji,
     description: row.description,
@@ -430,6 +433,17 @@ function createListRepository(): ListRepository {
       if (error) throw new Error(error.message);
       return (data ?? []).map(mapList);
     },
+    async listForCrew(crewId) {
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase
+        .from("lists")
+        .select("*")
+        .eq("crew_id", crewId)
+        .is("deleted_at", null)
+        .order("updated_at", { ascending: false });
+      if (error) throw new Error(error.message);
+      return (data ?? []).map(mapList);
+    },
     async getById(id) {
       const supabase = getSupabaseBrowserClient();
       const { data, error } = await supabase
@@ -448,6 +462,7 @@ function createListRepository(): ListRepository {
         .upsert({
           id: list.id,
           owner_id: list.ownerId,
+          crew_id: list.crewId ?? null,
           name: list.name,
           emoji: list.emoji,
           description: list.description ?? null,
@@ -471,9 +486,9 @@ function createListRepository(): ListRepository {
           deleted_at: new Date().toISOString(),
           updated_by: userId,
         })
-        .eq("id", id)
-        .eq("owner_id", userId);
+        .eq("id", id);
       if (error) throw new Error(error.message);
+      void userId;
     },
     subscribe(ownerId, onChange) {
       const supabase = getSupabaseBrowserClient();
@@ -494,16 +509,37 @@ function createListRepository(): ListRepository {
         void supabase.removeChannel(channel);
       };
     },
+    subscribeCrew(crewId, onChange) {
+      const supabase = getSupabaseBrowserClient();
+      const channel = supabase
+        .channel(`lists-crew:${crewId}`)
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "lists",
+            filter: `crew_id=eq.${crewId}`,
+          },
+          () => onChange(),
+        )
+        .subscribe();
+      return () => {
+        void supabase.removeChannel(channel);
+      };
+    },
   };
 }
 
 function createRecommendationRepository(): RecommendationRepository {
   return {
     async listForOwner(ownerId) {
-      const supabase = getSupabaseBrowserClient();
       const lists = await createListRepository().listForOwner(ownerId);
-      const listIds = lists.map((list) => list.id);
+      return this.listForListIds(lists.map((list) => list.id));
+    },
+    async listForListIds(listIds) {
       if (listIds.length === 0) return [];
+      const supabase = getSupabaseBrowserClient();
       const { data, error } = await supabase
         .from("recommendations")
         .select("*")
@@ -513,14 +549,7 @@ function createRecommendationRepository(): RecommendationRepository {
       return (data ?? []).map(mapRecommendation);
     },
     async listForList(listId) {
-      const supabase = getSupabaseBrowserClient();
-      const { data, error } = await supabase
-        .from("recommendations")
-        .select("*")
-        .eq("list_id", listId)
-        .is("deleted_at", null);
-      if (error) throw new Error(error.message);
-      return (data ?? []).map(mapRecommendation);
+      return this.listForListIds([listId]);
     },
     async upsert(item) {
       const supabase = getSupabaseBrowserClient();
@@ -592,6 +621,17 @@ function createRatingRepository(): RatingRepository {
       if (error) throw new Error(error.message);
       return (data ?? []).map(mapRating);
     },
+    async listForListIds(listIds) {
+      if (listIds.length === 0) return [];
+      const supabase = getSupabaseBrowserClient();
+      const { data, error } = await supabase
+        .from("ratings")
+        .select("*")
+        .in("list_id", listIds)
+        .is("deleted_at", null);
+      if (error) throw new Error(error.message);
+      return (data ?? []).map(mapRating);
+    },
     async upsert(rating) {
       const supabase = getSupabaseBrowserClient();
       const { data, error } = await supabase
@@ -636,7 +676,6 @@ function createRatingRepository(): RatingRepository {
             event: "*",
             schema: "public",
             table: "ratings",
-            filter: `user_id=eq.${userId}`,
           },
           () => onChange(),
         )
@@ -737,6 +776,7 @@ export function getCloudRepositories(): CloudRepositories {
       ratings: createRatingRepository(),
       preferences: createPreferencesRepository(),
       migrations: createMigrationRepository(),
+      crew: createCrewRepository(),
     };
   }
   return cached;

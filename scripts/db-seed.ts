@@ -101,19 +101,54 @@ async function seed() {
   const { error: movieError } = await admin.from("movies").upsert(DEMO_MOVIES);
   if (movieError) throw movieError;
 
-  console.log("Creating demo user…");
-  const userId = await ensureUser("alex@pickit.demo", "Alex");
+  console.log("Creating demo users…");
+  const alexId = await ensureUser("alex@pickit.demo", "Alex");
+  const jordanId = await ensureUser("jordan@pickit.demo", "Jordan");
+
+  console.log("Creating demo Crew…");
+  const { data: crewRow, error: crewError } = await admin
+    .from("crews")
+    .upsert(
+      {
+        id: "00000000-0000-4000-8000-0000000000c1",
+        name: "Alex & Jordan",
+        created_by: alexId,
+        updated_by: alexId,
+      },
+      { onConflict: "id" },
+    )
+    .select("id")
+    .single();
+  if (crewError) throw crewError;
+  const crewId = crewRow.id as string;
+
+  await admin.from("crew_members").upsert(
+    [
+      {
+        crew_id: crewId,
+        user_id: alexId,
+        role: "owner",
+      },
+      {
+        crew_id: crewId,
+        user_id: jordanId,
+        role: "member",
+      },
+    ],
+    { onConflict: "crew_id,user_id" },
+  );
 
   const listId = "demo-date-night";
   console.log("Seeding demo list…");
   const { error: listError } = await admin.from("lists").upsert({
     id: listId,
-    owner_id: userId,
+    owner_id: alexId,
+    crew_id: crewId,
     name: "Date Night",
     emoji: "💋",
     description: "Demo list for closed beta",
-    created_by: userId,
-    updated_by: userId,
+    created_by: alexId,
+    updated_by: alexId,
   });
   if (listError) throw listError;
 
@@ -126,9 +161,9 @@ async function seed() {
         source_type: "search",
         source_label: "Search",
         metadata: {},
-        added_by_user_id: userId,
-        created_by: userId,
-        updated_by: userId,
+        added_by_user_id: alexId,
+        created_by: alexId,
+        updated_by: alexId,
       },
       { onConflict: "list_id,movie_id" },
     );
@@ -137,34 +172,58 @@ async function seed() {
 
   console.log("Seeding ratings…");
   for (const movie of DEMO_MOVIES) {
-    const { error } = await admin.from("ratings").upsert(
-      {
-        list_id: listId,
-        movie_id: movie.id,
-        user_id: userId,
-        vote: "like",
-        created_by: userId,
-        updated_by: userId,
-      },
-      { onConflict: "list_id,movie_id,user_id" },
-    );
-    if (error) throw error;
+    for (const userId of [alexId, jordanId]) {
+      const { error } = await admin.from("ratings").upsert(
+        {
+          list_id: listId,
+          movie_id: movie.id,
+          user_id: userId,
+          vote: "like",
+          created_by: userId,
+          updated_by: userId,
+        },
+        { onConflict: "list_id,movie_id,user_id" },
+      );
+      if (error) throw error;
+    }
   }
 
+  await admin.from("crew_activity").insert({
+    crew_id: crewId,
+    user_id: alexId,
+    list_id: listId,
+    type: "list-created",
+    summary: "New list created: Date Night",
+    occurred_at: new Date().toISOString(),
+  });
+
   await admin.from("preferences").upsert({
-    user_id: userId,
+    user_id: alexId,
+    appearance: "dark",
+    analytics_opt_in: true,
+    developer_mode: true,
+  });
+  await admin.from("preferences").upsert({
+    user_id: jordanId,
     appearance: "dark",
     analytics_opt_in: true,
     developer_mode: false,
   });
 
   console.log("Done.");
-  console.log(`Demo login: alex@pickit.demo / ${DEMO_PASSWORD}`);
+  console.log(`Crew ${crewId} · Alex ${alexId} · Jordan ${jordanId}`);
+  console.log(`Passwords: ${DEMO_PASSWORD}`);
 }
 
 async function reset() {
   console.log("Resetting app tables…");
   const tables = [
+    "notifications",
+    "presence",
+    "crew_activity",
+    "crew_invitations",
+    "crew_members",
+    "crews",
     "data_migrations",
     "movie_nights",
     "ratings",
@@ -174,8 +233,6 @@ async function reset() {
     "recommendation_sources",
   ];
   for (const table of tables) {
-    const { error } = await admin.from(table).delete().neq("id", "___never___");
-    // preferences uses user_id PK — handle separately
     if (table === "preferences") {
       const { error: prefError } = await admin
         .from("preferences")
@@ -184,6 +241,15 @@ async function reset() {
       if (prefError) console.warn(prefError.message);
       continue;
     }
+    if (table === "presence") {
+      const { error } = await admin
+        .from("presence")
+        .delete()
+        .neq("user_id", "00000000-0000-0000-0000-000000000000");
+      if (error) console.warn(table, error.message);
+      continue;
+    }
+    const { error } = await admin.from(table).delete().neq("id", "___never___");
     if (error) console.warn(table, error.message);
   }
   console.log("Reset complete (auth users retained).");

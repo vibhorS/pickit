@@ -6,6 +6,8 @@ import {
 } from "@/lib/collaboration";
 import type { MovieVote } from "@/lib/types";
 import { useAuthStore } from "@/store/auth-store";
+import { useCrewStore } from "@/store/crew-store";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 
 type RatingStatusProps = {
   collectionId: string;
@@ -14,7 +16,7 @@ type RatingStatusProps = {
   compact?: boolean;
 };
 
-/** Shows your rating vs partner rating / waiting states. */
+/** Shows your rating vs Crew member rating / waiting / mutual states. */
 export function CollaborativeRatingStatus({
   collectionId,
   movieId,
@@ -23,13 +25,24 @@ export function CollaborativeRatingStatus({
 }: RatingStatusProps) {
   const profile = useAuthStore((state) => state.profile);
   const partner = useAuthStore((state) => state.partner);
+  const otherMember = useCrewStore((state) =>
+    profile ? state.primaryOtherMember(profile.id) : null,
+  );
+
   if (!profile) return null;
+
+  const otherUserId = isSupabaseConfigured()
+    ? otherMember?.userId
+    : partner.partner?.id;
+  const otherName = isSupabaseConfigured()
+    ? (otherMember?.profile?.displayName ?? "Crew member")
+    : (partner.partner?.displayName ?? "Partner");
 
   const state = getRatingDisplayState({
     movieId,
     collectionId,
     currentUserId: profile.id,
-    partnerUserId: partner.partner?.id,
+    partnerUserId: otherUserId,
     ratings,
   });
 
@@ -40,18 +53,21 @@ export function CollaborativeRatingStatus({
       r.userId === profile.id,
   );
   const theirs =
-    partner.partner &&
+    otherUserId &&
     ratings.find(
       (r) =>
         r.collectionId === collectionId &&
         r.movieId === movieId &&
-        r.userId === partner.partner!.id,
+        r.userId === otherUserId,
     );
 
   if (compact) {
     return (
       <span className="text-[0.65rem] text-netflix-muted">
-        {formatRatingStateLabel(state)}
+        {formatRatingStateLabel(state, {
+          mine: mine?.vote,
+          theirs: theirs ? theirs.vote : undefined,
+        })}
       </span>
     );
   }
@@ -64,9 +80,9 @@ export function CollaborativeRatingStatus({
           {mine ? (mine.vote === "like" ? "Liked" : "Passed") : "—"}
         </span>
       </span>
-      {partner.partner && (
+      {otherUserId && (
         <span>
-          {partner.partner.displayName}:{" "}
+          {otherName}:{" "}
           <span className="text-white">
             {theirs
               ? theirs.vote === "like"
@@ -79,8 +95,14 @@ export function CollaborativeRatingStatus({
         </span>
       )}
       {state === "mutual-match" && (
-        <span className="text-emerald-400">Match</span>
+        <span className="text-emerald-400">Mutual Like</span>
       )}
+      {state === "mismatch" &&
+        mine?.vote === "pass" &&
+        theirs &&
+        theirs.vote === "pass" && (
+          <span className="text-netflix-muted">Mutual Dislike</span>
+        )}
     </div>
   );
 }
