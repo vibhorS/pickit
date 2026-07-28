@@ -1,40 +1,58 @@
 "use client";
 
 import { useMemo } from "react";
-import { getMutualMatchMovies } from "@/lib/match-engine";
-import { getPartnerVotesForCollection } from "@/lib/mock-partner-votes";
 import { collectionService } from "@/lib/services/collection-service";
 import {
   movieService,
   type CollectionMovie,
 } from "@/lib/services/movie-service";
-import type { Collection, Movie, MovieVote } from "@/lib/types";
-import { CURRENT_USER } from "@/lib/users";
+import type {
+  Collection,
+  CollectionMembership,
+  Movie,
+  MovieVote,
+  User,
+} from "@/lib/types";
 import {
+  EMPTY_COLLECTION_OVERRIDES,
   EMPTY_CREATED_COLLECTIONS,
   EMPTY_LOCAL_ITEMS,
   mergeCollectionItems,
+  type CollectionOverride,
   useLocalCollectionStore,
 } from "@/store/local-collection-store";
+import { useCollaborationStore } from "@/store/collaboration-store";
 import { useVoteStore } from "@/store/vote-store";
 
 export type CollectionReadinessState =
   | "empty"
-  | "needs-my-ratings"
-  | "waiting-for-partner"
+  | "waiting-for-you"
+  | "waiting-for-members"
+  | "no-mutual-matches"
   | "ready";
+
+export type MemberCollectionStats = {
+  user: User;
+  rated: number;
+  unrated: number;
+};
 
 export type CollectionStats = {
   totalMovies: number;
   myRated: number;
-  partnerRated: number;
   unratedMine: number;
-  unratedPartner: number;
+  otherMembersRated: number;
+  unratedOthers: number;
   mutualMatches: number;
   completionPercent: number;
   readinessState: CollectionReadinessState;
   readinessLabel: string;
   readinessEmoji: string;
+  currentUser: User;
+  members: User[];
+  memberStats: MemberCollectionStats[];
+  waitingMemberNames: string[];
+  ratings: MovieVote[];
   items: CollectionMovie[];
   movies: Movie[];
   mutualMatchMovies: Movie[];
@@ -44,12 +62,17 @@ type CollectionStatsInput = {
   votes: MovieVote[];
   byCollection: Record<string, CollectionMovie[]>;
   createdCollections: Collection[];
+  collectionOverrides: Record<string, CollectionOverride>;
+  users: User[];
+  memberships: CollectionMembership[];
+  activeUserId: string;
 };
 
-function getReadiness(
+function readinessFor(
   totalMovies: number,
   unratedMine: number,
-  unratedPartner: number,
+  waitingMembers: MemberCollectionStats[],
+  mutualMatches: number,
 ): Pick<
   CollectionStats,
   "readinessState" | "readinessLabel" | "readinessEmoji"
@@ -57,31 +80,39 @@ function getReadiness(
   if (totalMovies === 0) {
     return {
       readinessState: "empty",
-      readinessLabel: "No Movies Yet",
-      readinessEmoji: "⚪",
+      readinessLabel: "Add Recommendations",
+      readinessEmoji: "＋",
     };
   }
-
   if (unratedMine > 0) {
     return {
-      readinessState: "needs-my-ratings",
-      readinessLabel: "Needs More Ratings",
-      readinessEmoji: "🟡",
+      readinessState: "waiting-for-you",
+      readinessLabel: "Waiting for You",
+      readinessEmoji: "⭐",
     };
   }
-
-  if (unratedPartner > 0) {
+  if (waitingMembers.length > 0) {
+    const label =
+      waitingMembers.length === 1
+        ? `Waiting for ${waitingMembers[0].user.name}`
+        : `Waiting for ${waitingMembers.length} Members`;
     return {
-      readinessState: "waiting-for-partner",
-      readinessLabel: "Waiting for partner",
-      readinessEmoji: "🟡",
+      readinessState: "waiting-for-members",
+      readinessLabel: label,
+      readinessEmoji: "⏳",
     };
   }
-
+  if (mutualMatches === 0) {
+    return {
+      readinessState: "no-mutual-matches",
+      readinessLabel: "No Matches Yet",
+      readinessEmoji: "🚫",
+    };
+  }
   return {
     readinessState: "ready",
-    readinessLabel: "Ready for Movie Night",
-    readinessEmoji: "🟢",
+    readinessLabel: "Ready",
+    readinessEmoji: "🍿",
   };
 }
 
@@ -89,81 +120,162 @@ function deriveCollectionStats(
   collectionId: string,
   input: CollectionStatsInput,
 ): CollectionStats {
-  const collection =
+  const baseCollection =
     collectionService.getById(collectionId) ??
     input.createdCollections.find((entry) => entry.id === collectionId);
+  const override = input.collectionOverrides[collectionId];
+  const collection =
+    baseCollection && !override?.deleted
+      ? {
+          ...baseCollection,
+          name: override?.name ?? baseCollection.name,
+          emoji: override?.emoji ?? baseCollection.emoji,
+        }
+      : undefined;
   const seedItems = collection
     ? movieService.getCollectionMovies(collection.items)
     : EMPTY_LOCAL_ITEMS;
-  const localItems =
-    input.byCollection[collectionId] ?? EMPTY_LOCAL_ITEMS;
-  const items = mergeCollectionItems(seedItems, localItems);
+  const localItems = collection
+    ? input.byCollection[collectionId] ?? EMPTY_LOCAL_ITEMS
+    : EMPTY_LOCAL_ITEMS;
+  const items = mergeCollectionItems(
+    seedItems,
+    localItems,
+    override?.removedMovieIds,
+  );
   const movies = items.map((item) => item.movie);
   const movieIds = new Set(movies.map((movie) => movie.id));
-  const myVotes = input.votes.filter(
+  const memberIds = new Set(
+    input.memberships
+      .filter((membership) => membership.collectionId === collectionId)
+      .map((membership) => membership.userId),
+  );
+  const activeUser =
+    input.users.find((user) => user.id === input.activeUserId) ??
+    input.users[0] ?? { id: input.activeUserId, name: "You" };
+  const members = input.users.filter((user) => memberIds.has(user.id));
+  if (members.length === 0) {
+    memberIds.add(activeUser.id);
+    members.unshift(activeUser);
+  }
+
+  const collectionVotes = input.votes.filter(
     (vote) =>
       vote.collectionId === collectionId &&
-      vote.userId === CURRENT_USER.id &&
+      memberIds.has(vote.userId) &&
       movieIds.has(vote.movieId),
   );
-  const partnerVotes = getPartnerVotesForCollection(collectionId).filter(
-    (vote) => movieIds.has(vote.movieId),
+  const memberStats = members.map((user) => {
+    const rated = new Set(
+      collectionVotes
+        .filter((vote) => vote.userId === user.id)
+        .map((vote) => vote.movieId),
+    ).size;
+    return {
+      user,
+      rated,
+      unrated: Math.max(movies.length - rated, 0),
+    };
+  });
+  const myStats =
+    memberStats.find((entry) => entry.user.id === activeUser.id) ??
+    { user: activeUser, rated: 0, unrated: movies.length };
+  const otherStats = memberStats.filter(
+    (entry) => entry.user.id !== activeUser.id,
   );
-  const myRatedIds = new Set(myVotes.map((vote) => vote.movieId));
-  const partnerRatedIds = new Set(
-    partnerVotes.map((vote) => vote.movieId),
-  );
-  const totalMovies = movies.length;
-  const myRated = myRatedIds.size;
-  const partnerRated = partnerRatedIds.size;
-  const unratedMine = Math.max(totalMovies - myRated, 0);
-  const unratedPartner = Math.max(totalMovies - partnerRated, 0);
-  const ratedByBoth = movies.filter(
-    (movie) =>
-      myRatedIds.has(movie.id) && partnerRatedIds.has(movie.id),
-  ).length;
-  const mutualMatchMovies = getMutualMatchMovies(
-    movies,
-    myVotes,
-    partnerVotes,
+  const mutualMatchMovies =
+    members.length < 2
+      ? []
+      : movies.filter((movie) =>
+          members.every((member) =>
+            collectionVotes.some(
+              (vote) =>
+                vote.userId === member.id &&
+                vote.movieId === movie.id &&
+                vote.vote === "like",
+            ),
+          ),
+        );
+  const ratingSlots = movies.length * Math.max(members.length, 1);
+  const completedSlots = memberStats.reduce(
+    (total, member) => total + member.rated,
+    0,
   );
   const completionPercent =
-    totalMovies === 0
+    ratingSlots === 0
       ? 0
-      : Math.round((ratedByBoth / totalMovies) * 100);
+      : Math.round((completedSlots / ratingSlots) * 100);
+  const waitingMembers = otherStats.filter((member) => member.unrated > 0);
 
   return {
-    totalMovies,
-    myRated,
-    partnerRated,
-    unratedMine,
-    unratedPartner,
+    totalMovies: movies.length,
+    myRated: myStats.rated,
+    unratedMine: myStats.unrated,
+    otherMembersRated: otherStats.reduce(
+      (total, member) => total + member.rated,
+      0,
+    ),
+    unratedOthers: otherStats.reduce(
+      (total, member) => total + member.unrated,
+      0,
+    ),
     mutualMatches: mutualMatchMovies.length,
     completionPercent,
-    ...getReadiness(totalMovies, unratedMine, unratedPartner),
+    ...readinessFor(
+      movies.length,
+      myStats.unrated,
+      waitingMembers,
+      mutualMatchMovies.length,
+    ),
+    currentUser: activeUser,
+    members,
+    memberStats,
+    waitingMemberNames: waitingMembers.map(
+      (member) => member.user.name,
+    ),
+    ratings: collectionVotes,
     items,
     movies,
     mutualMatchMovies,
   };
 }
 
-/** Non-reactive selector for callbacks and service code. */
-export function getCollectionStats(collectionId: string): CollectionStats {
-  const localState = useLocalCollectionStore.getState();
-  return deriveCollectionStats(collectionId, {
+function snapshotInput(): CollectionStatsInput {
+  const local = useLocalCollectionStore.getState();
+  const collaboration = useCollaborationStore.getState();
+  return {
     votes: useVoteStore.getState().votes,
-    byCollection: localState.byCollection,
+    byCollection: local.byCollection,
     createdCollections:
-      localState.createdCollections ?? EMPTY_CREATED_COLLECTIONS,
-  });
+      local.createdCollections ?? EMPTY_CREATED_COLLECTIONS,
+    collectionOverrides:
+      local.collectionOverrides ?? EMPTY_COLLECTION_OVERRIDES,
+    users: collaboration.users,
+    memberships: collaboration.memberships,
+    activeUserId: collaboration.activeUserId,
+  };
 }
 
-/** Reactive selector for screens; updates immediately when movies or votes change. */
+/** Non-reactive selector for callbacks and service code. */
+export function getCollectionStats(collectionId: string): CollectionStats {
+  return deriveCollectionStats(collectionId, snapshotInput());
+}
+
+export function getTonightQueue(
+  collectionId: string,
+): CollectionMovie[] {
+  const stats = getCollectionStats(collectionId);
+  const mutualIds = new Set(
+    stats.mutualMatchMovies.map((movie) => movie.id),
+  );
+  return stats.items.filter((item) => mutualIds.has(item.movie.id));
+}
+
+/** Reactive selector for screens; updates with movies, members, identity or ratings. */
 export function useCollectionStats(
   collectionId: string,
 ): CollectionStats {
-  const stats = useCollectionStatsList([collectionId]);
-  return stats[0];
+  return useCollectionStatsList([collectionId])[0];
 }
 
 /** Reactive bulk selector for collection pickers and summaries. */
@@ -176,6 +288,16 @@ export function useCollectionStatsList(
   );
   const createdCollections = useLocalCollectionStore(
     (state) => state.createdCollections,
+  );
+  const collectionOverrides = useLocalCollectionStore(
+    (state) => state.collectionOverrides,
+  );
+  const users = useCollaborationStore((state) => state.users);
+  const memberships = useCollaborationStore(
+    (state) => state.memberships,
+  );
+  const activeUserId = useCollaborationStore(
+    (state) => state.activeUserId,
   );
   const collectionKey = collectionIds.join("\u001f");
 
@@ -190,8 +312,22 @@ export function useCollectionStatsList(
             byCollection,
             createdCollections:
               createdCollections ?? EMPTY_CREATED_COLLECTIONS,
+            collectionOverrides:
+              collectionOverrides ?? EMPTY_COLLECTION_OVERRIDES,
+            users,
+            memberships,
+            activeUserId,
           }),
         ),
-    [collectionKey, votes, byCollection, createdCollections],
+    [
+      activeUserId,
+      byCollection,
+      collectionKey,
+      collectionOverrides,
+      createdCollections,
+      memberships,
+      users,
+      votes,
+    ],
   );
 }

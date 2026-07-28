@@ -1,13 +1,22 @@
 import type { User } from "@/lib/types";
 
-/** Local viewer — all interactive votes belong to this user. */
-export const CURRENT_USER: User = {
-  id: "you",
-  name: "You",
+export const DEFAULT_OWNER: User = {
+  id: "vibhor",
+  name: "Vibhor",
+  color: "#e50914",
 };
 
-/** Placeholder partner — votes come from mock data until auth exists. */
-export const PARTNER_USER: User = {
-  id: "partner",
+export const DEFAULT_COLLABORATOR: User = {
+  id: "urvashi",
   name: "Urvashi",
+  color: "#8b5cf6",
 };
+
+/**
+ * Seed identities for local demo / migration.
+ * Live identity comes from AuthenticationService + auth-store.
+ */
+export const DEFAULT_USERS: User[] = [
+  DEFAULT_OWNER,
+  DEFAULT_COLLABORATOR,
+];

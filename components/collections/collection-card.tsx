@@ -3,7 +3,11 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import type { Collection } from "@/lib/types";
+import { getCollectionSharingState } from "@/lib/collaboration";
+import { describeOwnership } from "@/lib/services/collaboration/permissions";
+import { Badge } from "@/components/ui/badge";
 import { MOTION } from "@/lib/motion";
+import { useCollaborationStore } from "@/store/collaboration-store";
 import { useCollectionStats } from "@/store/collection-stats-selector";
 
 type CollectionCardProps = {
@@ -14,12 +18,46 @@ export function CollectionCard({ collection }: CollectionCardProps) {
   const stats = useCollectionStats(collection.id);
   const movieCount = stats.totalMovies;
   const movieLabel = movieCount === 1 ? "1 movie" : `${movieCount} movies`;
+  const memberships = useCollaborationStore(
+    (state) => state.memberships,
+  );
+  const invitations = useCollaborationStore(
+    (state) => state.invitations,
+  );
+  const users = useCollaborationStore((state) => state.users);
+  const activeUserId = useCollaborationStore(
+    (state) => state.activeUserId,
+  );
+  const sharingState = getCollectionSharingState(
+    collection.id,
+    memberships,
+    invitations,
+  );
+  const sharingLabel =
+    sharingState === "connected"
+      ? "Connected"
+      : sharingState === "invitation-pending"
+        ? "Invitation Pending"
+        : "Not Shared";
+  const ownershipLabel = describeOwnership(
+    collection,
+    users,
+    memberships,
+    activeUserId,
+  );
+
+  const sharingTone =
+    sharingState === "connected"
+      ? "accent"
+      : sharingState === "invitation-pending"
+        ? "warning"
+        : "neutral";
 
   return (
     <Link
       href={`/collection/${collection.id}`}
       prefetch
-      aria-label={`Open ${collection.name}, ${movieLabel}`}
+      aria-label={`Open ${collection.name}, ${movieLabel}, ${sharingLabel}, ${ownershipLabel}`}
       className="block rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-netflix-red"
     >
       <motion.article
@@ -44,33 +82,15 @@ export function CollectionCard({ collection }: CollectionCardProps) {
             </div>
           </div>
 
-          <span
-            className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-medium tracking-wide ${
-              collection.shared
-                ? "bg-netflix-red/15 text-netflix-red"
-                : "bg-white/[0.05] text-netflix-muted"
-            }`}
-          >
-            {collection.shared ? "Shared" : "Private"}
-          </span>
+          <Badge tone={sharingTone}>{sharingLabel}</Badge>
         </div>
 
-        <div className="border-t border-white/5 pt-4">
-          <div className="flex items-center justify-between gap-3 text-xs">
-            <span className="inline-flex items-center gap-1.5 font-medium text-white">
-              <span aria-hidden="true">{stats.readinessEmoji}</span>
-              {stats.readinessLabel}
-            </span>
-            <span className="font-semibold text-netflix-muted">
-              {stats.completionPercent}% complete
-            </span>
-          </div>
-          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
-            <div
-              className="h-full rounded-full bg-netflix-red transition-[width] duration-300"
-              style={{ width: `${stats.completionPercent}%` }}
-            />
-          </div>
+        <div className="flex items-center justify-between gap-3 border-t border-white/5 pt-4 text-xs">
+          <span className="inline-flex items-center gap-1.5 font-medium text-white">
+            <span aria-hidden="true">{stats.readinessEmoji}</span>
+            {stats.readinessLabel}
+          </span>
+          <span className="truncate text-netflix-muted">{ownershipLabel}</span>
         </div>
       </motion.article>
     </Link>

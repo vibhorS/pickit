@@ -161,8 +161,8 @@ export function CaptureReviewStep({
                   session.collectionIds.length
                 } ${
                   session.collectionIds.length === 1
-                    ? "collection"
-                    : "collections"
+                    ? "list"
+                    : "lists"
                 }`
               : "Review every match. Nothing is saved until you approve it."}
           </p>
@@ -317,7 +317,7 @@ export function CaptureReviewStep({
             onClick={onContinue}
             className="btn-primary w-full"
           >
-            Choose Collections · {selectedCount} selected
+            Choose Lists · {selectedCount} selected
           </button>
         </div>
       )}

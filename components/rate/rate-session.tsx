@@ -13,13 +13,15 @@ import { MOTION } from "@/lib/motion";
 import type { CollectionMovie } from "@/lib/services/movie-service";
 import { countRatedMovies, isMovieRated } from "@/lib/vote-status";
 import type { Collection, VoteValue } from "@/lib/types";
-import { CURRENT_USER } from "@/lib/users";
+import { useCollaborationStore } from "@/store/collaboration-store";
 import {
   EMPTY_LOCAL_ITEMS,
+  EMPTY_REMOVED_MOVIE_IDS,
   mergeCollectionItems,
   useLocalCollectionStore,
 } from "@/store/local-collection-store";
 import { useVoteStore } from "@/store/vote-store";
+import { useSessionStore } from "@/store/session-store";
 
 type RateSessionProps = {
   collection: Collection;
@@ -33,12 +35,38 @@ export function RateSession({
   const [hasHydrated, setHasHydrated] = useState(false);
   const votes = useVoteStore((state) => state.votes);
   const voteMovie = useVoteStore((state) => state.voteMovie);
+  const activeUserId = useCollaborationStore(
+    (state) => state.activeUserId,
+  );
+  const users = useCollaborationStore((state) => state.users);
+  const activeUser = users.find(
+    (user) => user.id === activeUserId,
+  );
+  const recordActivity = useCollaborationStore(
+    (state) => state.recordActivity,
+  );
+  const setCurrentSession = useSessionStore(
+    (state) => state.setCurrentSession,
+  );
+  const clearCurrentSession = useSessionStore(
+    (state) => state.clearCurrentSession,
+  );
   const localItems = useLocalCollectionStore(
     (state) => state.byCollection[collection.id] ?? EMPTY_LOCAL_ITEMS,
   );
+  const removedMovieIds = useLocalCollectionStore(
+    (state) =>
+      state.collectionOverrides[collection.id]?.removedMovieIds ??
+        EMPTY_REMOVED_MOVIE_IDS,
+  );
   const items = useMemo(
-    () => mergeCollectionItems(serverItems, localItems),
-    [serverItems, localItems],
+    () =>
+      mergeCollectionItems(
+        serverItems,
+        localItems,
+        removedMovieIds,
+      ),
+    [serverItems, localItems, removedMovieIds],
   );
 
   useEffect(() => {
@@ -46,23 +74,28 @@ export function RateSession({
     const unsubVotes = useVoteStore.persist.onFinishHydration(finish);
     const unsubLocal =
       useLocalCollectionStore.persist.onFinishHydration(finish);
+    const unsubCollaboration =
+      useCollaborationStore.persist.onFinishHydration(finish);
 
     if (
       useVoteStore.persist.hasHydrated() &&
-      useLocalCollectionStore.persist.hasHydrated()
+      useLocalCollectionStore.persist.hasHydrated() &&
+      useCollaborationStore.persist.hasHydrated()
     ) {
-      setHasHydrated(true);
+      queueMicrotask(finish);
     }
 
     return () => {
       unsubVotes();
       unsubLocal();
+      unsubCollaboration();
     };
   }, []);
 
   const collectionVotes = votes.filter(
     (vote) =>
-      vote.collectionId === collection.id && vote.userId === CURRENT_USER.id,
+      vote.collectionId === collection.id &&
+      vote.userId === activeUserId,
   );
   const movieIds = items.map((item) => item.movie.id);
   const total = items.length;
@@ -72,10 +105,38 @@ export function RateSession({
   );
   const current = unratedItems[0];
   const progress = total > 0 ? Math.round((rated / total) * 100) : 0;
+  useEffect(() => {
+    if (!hasHydrated) return;
+    if (!current) {
+      clearCurrentSession("rating");
+      if (total > 0) {
+        recordActivity({
+          collectionId: collection.id,
+          userId: activeUserId,
+          type: "ratings-completed",
+        });
+      }
+      return;
+    }
+    setCurrentSession({
+      kind: "rating",
+      collectionId: collection.id,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [
+    clearCurrentSession,
+    collection.id,
+    current,
+    hasHydrated,
+    activeUserId,
+    recordActivity,
+    setCurrentSession,
+    total,
+  ]);
 
   function handleVote(vote: VoteValue) {
     if (!current || !collection.id || !current.movie.id) return;
-    voteMovie(collection.id, current.movie.id, vote);
+    voteMovie(collection.id, current.movie.id, vote, activeUserId);
   }
 
   if (!hasHydrated) {
@@ -88,7 +149,7 @@ export function RateSession({
 
   return (
     <FadeIn className="mx-auto w-full max-w-lg">
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <Link
           href={`/collection/${collection.id}`}
           prefetch
@@ -97,6 +158,12 @@ export function RateSession({
           <span aria-hidden="true">←</span>
           {collection.name}
         </Link>
+        <p className="ml-auto text-xs text-netflix-muted">
+          Rating as{" "}
+          <span className="font-medium text-white">
+            {activeUser?.name ?? "current user"}
+          </span>
+        </p>
         {total > 0 && (
           <p className="text-sm font-medium text-netflix-muted">
             {rated} of {total} rated
@@ -120,7 +187,7 @@ export function RateSession({
           <EmptyState
             icon={<Film className="size-7" strokeWidth={1.5} />}
             title="Nothing to rate"
-            description="Add movies to this collection first, then come back to rate them."
+            description="Add movies to this list first, then come back to rate them."
           />
           <div className="text-center">
             <Link

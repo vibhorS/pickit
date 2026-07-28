@@ -1,5 +1,6 @@
 "use client";
 
+import { motion } from "framer-motion";
 import { RecommendationContext } from "@/components/recommendation/recommendation-context";
 import { PosterImage } from "@/components/ui/poster-image";
 import type {
@@ -7,11 +8,14 @@ import type {
   RecommendationMetadata,
   RecommendationSource,
 } from "@/lib/types";
+import { useCollaborationStore } from "@/store/collaboration-store";
 
 type DecisionMovieCardProps = {
   movie: Movie;
   source?: RecommendationSource;
   metadata?: RecommendationMetadata;
+  addedByUserId?: string;
+  showOverview?: boolean;
 };
 
 function formatRuntime(minutes: number): string | null {
@@ -40,12 +44,20 @@ export function DecisionMovieCard({
   movie,
   source,
   metadata,
+  addedByUserId,
+  showOverview = false,
 }: DecisionMovieCardProps) {
+  const activeUserId = useCollaborationStore(
+    (state) => state.activeUserId,
+  );
+  const addedByUser = useCollaborationStore((state) =>
+    state.users.find((user) => user.id === addedByUserId),
+  );
   const runtime = formatRuntime(movie.runtime);
   const meta = [
     movie.year > 0 ? String(movie.year) : null,
     runtime,
-    movie.rating > 0 ? movie.rating.toFixed(1) : null,
+    movie.rating > 0 ? `TMDb ${movie.rating.toFixed(1)}` : null,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -91,9 +103,15 @@ export function DecisionMovieCard({
             </p>
           )}
 
-          <p className="line-clamp-4 text-sm leading-relaxed text-netflix-muted">
-            {movie.overview || "No overview available."}
-          </p>
+          {showOverview && (
+            <motion.p
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              className="text-sm leading-relaxed text-netflix-muted"
+            >
+              {movie.overview || "No overview available."}
+            </motion.p>
+          )}
 
           {source && (
             <RecommendationContext
@@ -101,6 +119,14 @@ export function DecisionMovieCard({
               source={source}
               variant="movie-night"
             />
+          )}
+          {addedByUserId && (
+            <p className="text-xs text-netflix-muted/65">
+              Added by{" "}
+              {addedByUserId === activeUserId
+                ? "you"
+                : addedByUser?.name ?? "a member"}
+            </p>
           )}
 
           <StreamingPlaceholder />

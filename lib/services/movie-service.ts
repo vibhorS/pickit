@@ -9,11 +9,14 @@ import {
   tmdbService,
   type TmdbSearchMovie,
 } from "@/lib/services/tmdb-service";
+import { DEFAULT_OWNER } from "@/lib/users";
 
 export type CollectionMovie = {
   movie: Movie;
   source: RecommendationSource;
   metadata?: RecommendationMetadata;
+  addedByUserId: string;
+  addedAt: string;
 };
 
 function mapTmdbMovieToMovie(movie: TmdbSearchMovie): Movie {
@@ -49,7 +52,18 @@ export const movieService = {
     return items.flatMap((item) => {
       const movie = movies.find((entry) => entry.id === item.movieId);
       if (!movie) return [];
-      return [{ movie, source: item.source, metadata: item.metadata }];
+      return [
+        {
+          movie,
+          source: item.source,
+          metadata: item.metadata,
+          addedByUserId: item.addedByUserId ?? DEFAULT_OWNER.id,
+          addedAt:
+            item.addedAt ??
+            item.metadata?.savedAt ??
+            "2026-01-01T00:00:00.000Z",
+        },
+      ];
     });
   },
 
@@ -67,6 +81,11 @@ export const movieService = {
       movie,
       source: item.source,
       metadata: item.metadata,
+      addedByUserId: item.addedByUserId ?? DEFAULT_OWNER.id,
+      addedAt:
+        item.addedAt ??
+        item.metadata?.savedAt ??
+        "2026-01-01T00:00:00.000Z",
     };
   },
 

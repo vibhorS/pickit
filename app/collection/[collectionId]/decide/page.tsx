@@ -7,6 +7,6 @@ type LegacyDecidePageProps = {
 export default async function LegacyDecidePage({
   params,
 }: LegacyDecidePageProps) {
-  const { collectionId } = await params;
-  redirect(`/decision/${collectionId}`);
+  await params;
+  redirect("/movie-night");
 }

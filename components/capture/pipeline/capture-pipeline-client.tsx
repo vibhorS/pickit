@@ -19,6 +19,12 @@ import {
   EMPTY_CAPTURE_SESSIONS,
   useCaptureStore,
 } from "@/store/capture-store";
+import {
+  getCurrentSession,
+  useSessionStore,
+  type CaptureSessionState,
+  type RecommendationContextDraft,
+} from "@/store/session-store";
 
 type Step =
   | "entry"
@@ -44,26 +50,82 @@ export function CapturePipelineClient({
   const [selectedCollectionIds, setSelectedCollectionIds] = useState<string[]>(
     [],
   );
+  const [contextDraft, setContextDraft] =
+    useState<RecommendationContextDraft>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedMovieCount, setSavedMovieCount] = useState(0);
+  const setCurrentSession = useSessionStore(
+    (state) => state.setCurrentSession,
+  );
+  const clearCurrentSession = useSessionStore(
+    (state) => state.clearCurrentSession,
+  );
 
   useEffect(() => {
-    const finish = () => setHydrated(true);
-    const unsubscribe = useCaptureStore.persist.onFinishHydration(finish);
-    if (useCaptureStore.persist.hasHydrated()) {
-      queueMicrotask(finish);
+    const finish = () => {
+      if (
+        !useCaptureStore.persist.hasHydrated() ||
+        !useSessionStore.persist.hasHydrated()
+      ) {
+        return;
+      }
+      queueMicrotask(() => {
+        const draft = getCurrentSession();
+        if (draft?.kind === "capture") {
+          setSession(draft.session);
+          setCandidates(draft.candidates);
+          setSelectedCollectionIds(draft.selectedCollectionIds);
+          setContextDraft(draft.contextDraft);
+          setStep(draft.step);
+        }
+        setHydrated(true);
+      });
+    };
+    const unsubscribeCapture =
+      useCaptureStore.persist.onFinishHydration(finish);
+    const unsubscribeSession =
+      useSessionStore.persist.onFinishHydration(finish);
+    if (
+      useCaptureStore.persist.hasHydrated() &&
+      useSessionStore.persist.hasHydrated()
+    ) {
+      finish();
     }
-    return unsubscribe;
+    return () => {
+      unsubscribeCapture();
+      unsubscribeSession();
+    };
   }, []);
+
+  function saveDraft(
+    nextStep: CaptureSessionState["step"],
+    nextSession = session,
+    nextCandidates = candidates,
+    nextCollectionIds = selectedCollectionIds,
+    nextContextDraft = contextDraft,
+  ) {
+    if (!nextSession) return;
+    setCurrentSession({
+      kind: "capture",
+      step: nextStep,
+      session: nextSession,
+      candidates: nextCandidates,
+      selectedCollectionIds: nextCollectionIds,
+      contextDraft: nextContextDraft,
+      updatedAt: new Date().toISOString(),
+    });
+  }
 
   function reset() {
     setStep("entry");
     setSession(null);
     setCandidates([]);
     setSelectedCollectionIds([]);
+    setContextDraft(undefined);
     setError(null);
     setSavedMovieCount(0);
+    clearCurrentSession("capture");
   }
 
   async function handleReceive(input: ManualCaptureInput) {
@@ -74,6 +136,12 @@ export function CapturePipelineClient({
       setSession(nextSession);
       setCandidates(nextSession.result.candidates);
       setStep("review");
+      saveDraft(
+        "review",
+        nextSession,
+        nextSession.result.candidates,
+        [],
+      );
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Capture could not be read.",
@@ -99,6 +167,7 @@ export function CapturePipelineClient({
       setSession(result.session);
       setSavedMovieCount(result.savedMovieCount);
       setStep("success");
+      clearCurrentSession("capture");
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : "Capture could not be saved.",
@@ -142,11 +211,15 @@ export function CapturePipelineClient({
         <CaptureReviewStep
           session={session}
           candidates={candidates}
-          onChange={setCandidates}
+          onChange={(nextCandidates) => {
+            setCandidates(nextCandidates);
+            saveDraft("review", session, nextCandidates);
+          }}
           onBack={reset}
           onContinue={() => {
             setError(null);
             setStep("collections");
+            saveDraft("collections");
           }}
         />
       )}
@@ -167,14 +240,24 @@ export function CapturePipelineClient({
           movieCount={selectedMovieCount}
           busy={busy}
           error={error}
-          onChange={setSelectedCollectionIds}
+          onChange={(collectionIds) => {
+            setSelectedCollectionIds(collectionIds);
+            saveDraft(
+              "collections",
+              session,
+              candidates,
+              collectionIds,
+            );
+          }}
           onBack={() => {
             setError(null);
             setStep("review");
+            saveDraft("review");
           }}
           onContinue={() => {
             setError(null);
             setStep("context");
+            saveDraft("context");
           }}
         />
       )}
@@ -185,6 +268,17 @@ export function CapturePipelineClient({
           initialPlatformLabel={session.result.source.label}
           sourceUrl={session.result.source.url}
           captureMethod={session.payload.adapterId}
+          initialDraft={contextDraft}
+          onDraftChange={(draft) => {
+            setContextDraft(draft);
+            saveDraft(
+              "context",
+              session,
+              candidates,
+              selectedCollectionIds,
+              draft,
+            );
+          }}
           submitLabel={`Save ${selectedMovieCount} ${
             selectedMovieCount === 1 ? "Movie" : "Movies"
           }`}
@@ -193,6 +287,7 @@ export function CapturePipelineClient({
           onBack={() => {
             setError(null);
             setStep("collections");
+            saveDraft("collections");
           }}
           onSubmit={(metadata) => void handleSave(metadata)}
         />

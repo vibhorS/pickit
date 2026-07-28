@@ -1,15 +1,17 @@
 "use client";
 
-import Link from "next/link";
 import { Library } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { CollectionDetailClient } from "@/components/collections/collection-detail-client";
+import { EmptyState } from "@/components/ui/empty-state";
 import { MovieDetailSkeleton } from "@/components/ui/skeleton";
 import {
   EMPTY_CREATED_COLLECTIONS,
   useLocalCollectionStore,
 } from "@/store/local-collection-store";
 import type { Collection } from "@/lib/types";
+import { useCollaborationStore } from "@/store/collaboration-store";
+import { useVoteStore } from "@/store/vote-store";
 
 type CollectionPageClientProps = {
   collectionId: string;
@@ -24,22 +26,50 @@ export function CollectionPageClient({
   const createdCollections = useLocalCollectionStore(
     (state) => state.createdCollections,
   );
+  const collectionOverrides = useLocalCollectionStore(
+    (state) => state.collectionOverrides,
+  );
 
   useEffect(() => {
     const finish = () => setHydrated(true);
-    const unsub = useLocalCollectionStore.persist.onFinishHydration(finish);
-    if (useLocalCollectionStore.persist.hasHydrated()) {
+    const unsubLocal =
+      useLocalCollectionStore.persist.onFinishHydration(finish);
+    const unsubCollaboration =
+      useCollaborationStore.persist.onFinishHydration(finish);
+    const unsubVotes = useVoteStore.persist.onFinishHydration(finish);
+    if (
+      useLocalCollectionStore.persist.hasHydrated() &&
+      useCollaborationStore.persist.hasHydrated() &&
+      useVoteStore.persist.hasHydrated()
+    ) {
       queueMicrotask(finish);
     }
-    return unsub;
+    return () => {
+      unsubLocal();
+      unsubCollaboration();
+      unsubVotes();
+    };
   }, []);
 
   const collection = useMemo(() => {
-    if (seedCollection) return seedCollection;
-    return (createdCollections ?? EMPTY_CREATED_COLLECTIONS).find(
-      (entry) => entry.id === collectionId,
-    );
-  }, [seedCollection, createdCollections, collectionId]);
+    const base =
+      seedCollection ??
+      (createdCollections ?? EMPTY_CREATED_COLLECTIONS).find(
+        (entry) => entry.id === collectionId,
+      );
+    const override = collectionOverrides[collectionId];
+    if (!base || override?.deleted) return undefined;
+    return {
+      ...base,
+      name: override?.name ?? base.name,
+      emoji: override?.emoji ?? base.emoji,
+    };
+  }, [
+    collectionId,
+    collectionOverrides,
+    createdCollections,
+    seedCollection,
+  ]);
 
   if (!hydrated) {
     return <MovieDetailSkeleton />;
@@ -47,21 +77,12 @@ export function CollectionPageClient({
 
   if (!collection) {
     return (
-      <div className="px-4 py-14 text-center">
-        <Library
-          className="mx-auto size-7 text-netflix-muted"
-          strokeWidth={1.5}
-        />
-        <h3 className="mt-6 text-xl font-semibold text-white">
-          Collection not found
-        </h3>
-        <p className="mt-2 text-sm text-netflix-muted">
-          It may have been removed, or this link is out of date.
-        </p>
-        <Link href="/collections" prefetch className="btn-primary mt-8 inline-flex">
-          Back to collections
-        </Link>
-      </div>
+      <EmptyState
+        icon={<Library className="size-7" strokeWidth={1.5} />}
+        title="List not found"
+        description="It may have been removed, or this link is out of date."
+        actionHref={{ label: "Back to lists", href: "/collections" }}
+      />
     );
   }
 

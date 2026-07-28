@@ -30,7 +30,7 @@ export function CaptureSaveSuccess({
         Saved {savedMovieCount} {savedMovieCount === 1 ? "movie" : "movies"}
       </h1>
       <p className="mt-2 text-sm text-netflix-muted">
-        Source, original content, timestamp, and collections are saved with
+        Source, original content, timestamp, and lists are saved with
         this capture.
       </p>
 
@@ -48,7 +48,7 @@ export function CaptureSaveSuccess({
             prefetch
             className="btn-secondary w-full"
           >
-            Go to Collection
+            Go to List
           </Link>
         )}
         <Link href="/" prefetch className="btn-ghost w-full">

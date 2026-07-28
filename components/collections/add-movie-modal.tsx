@@ -9,6 +9,7 @@ import { PosterImage } from "@/components/ui/poster-image";
 import { SearchResultSkeleton } from "@/components/ui/skeleton";
 import { MOTION } from "@/lib/motion";
 import { mapTmdbResultToMovie } from "@/lib/map-tmdb-result";
+import { analytics } from "@/lib/observability/analytics";
 import type { TmdbSearchMovie } from "@/lib/services/tmdb-service";
 import type { Movie, RecommendationMetadata } from "@/lib/types";
 
@@ -94,6 +95,10 @@ export function AddMovieModal({
 
         const data = (await response.json()) as TmdbSearchMovie[];
         setResults(data);
+        analytics.track("search_performed", {
+          queryLength: trimmed.length,
+          resultCount: data.length,
+        });
       } catch (err) {
         if (controller.signal.aborted) return;
         setResults([]);
@@ -138,7 +143,7 @@ export function AddMovieModal({
                 id={titleId}
                 className="text-lg font-semibold text-white sm:text-xl"
               >
-                {selectedMovie ? selectedMovie.title : "Add Movie"}
+                {selectedMovie ? selectedMovie.title : "Add Recommendation"}
               </h2>
               <button
                 type="button"
@@ -154,7 +159,7 @@ export function AddMovieModal({
               <div className="flex-1 overflow-y-auto px-5 pb-6 sm:px-6">
                 <RecommendationContextForm
                   captureMethod="manual-search"
-                  submitLabel="Add to Collection"
+                  submitLabel="Add to List"
                   onBack={() => setSelectedMovie(null)}
                   onSubmit={(metadata) => {
                     const movie = selectedMovie;
@@ -197,6 +202,14 @@ export function AddMovieModal({
                   icon={<Search className="size-7" strokeWidth={1.5} />}
                   title="Search failed"
                   description={error}
+                  action={{
+                    label: "Retry",
+                    onClick: () => {
+                      const current = query;
+                      setQuery(`${current} `);
+                      queueMicrotask(() => setQuery(current.trim()));
+                    },
+                  }}
                 />
               )}
 
@@ -214,8 +227,8 @@ export function AddMovieModal({
               {!isSearching && !error && !query.trim() && (
                 <EmptyState
                   icon={<Search className="size-7" strokeWidth={1.5} />}
-                  title="Find a movie"
-                  description="Search by title to add something new to this collection."
+                  title="Find a recommendation"
+                  description="Search by title to add something new to this list."
                 />
               )}
 
@@ -259,7 +272,7 @@ export function AddMovieModal({
                               }}
                               className="btn-primary min-h-10 shrink-0 px-4 py-2 text-xs disabled:bg-netflix-elevated disabled:text-netflix-muted"
                             >
-                              {alreadyAdded ? "Added" : "Add to Collection"}
+                              {alreadyAdded ? "Added" : "Add to List"}
                             </button>
                           </div>
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { animate, motion, useMotionValue } from "framer-motion";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DecisionMovieCard } from "@/components/movie-night/decision-movie-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FadeIn } from "@/components/ui/fade-in";
@@ -15,6 +15,14 @@ type RouletteGameProps = {
   onWin: (movie: Movie) => void;
   onBackToGames: () => void;
   onChooseCollection: () => void;
+  initialState?: RouletteGameState;
+  onStateChange?: (state: RouletteGameState) => void;
+};
+
+export type RouletteGameState = {
+  pool: CollectionMovie[];
+  selected: CollectionMovie | null;
+  highlightIndex: number;
 };
 
 function formatRuntime(minutes: number): string | null {
@@ -31,12 +39,31 @@ export function RouletteGame({
   onWin,
   onBackToGames,
   onChooseCollection,
+  initialState,
+  onStateChange,
 }: RouletteGameProps) {
-  const [pool, setPool] = useState(queue);
-  const [selected, setSelected] = useState<CollectionMovie | null>(null);
+  const [pool, setPool] = useState(
+    () => initialState?.pool ?? queue,
+  );
+  const [selected, setSelected] = useState<CollectionMovie | null>(
+    () => initialState?.selected ?? null,
+  );
   const [spinning, setSpinning] = useState(false);
-  const [highlightIndex, setHighlightIndex] = useState(0);
+  const [highlightIndex, setHighlightIndex] = useState(
+    () => initialState?.highlightIndex ?? 0,
+  );
   const spinProgress = useMotionValue(0);
+
+  useEffect(() => {
+    if (spinning) return;
+    onStateChange?.({ pool, selected, highlightIndex });
+  }, [
+    highlightIndex,
+    onStateChange,
+    pool,
+    selected,
+    spinning,
+  ]);
 
   async function spin() {
     if (spinning || pool.length === 0) return;
@@ -190,6 +217,7 @@ export function RouletteGame({
               movie={selected.movie}
               source={selected.source}
               metadata={selected.metadata}
+              addedByUserId={selected.addedByUserId}
             />
             <div className="flex flex-col gap-3 px-5 pb-5 sm:flex-row sm:px-6 sm:pb-6">
               <button

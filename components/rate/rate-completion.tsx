@@ -38,7 +38,7 @@ export function RateCompletion({
           prefetch
           className="btn-primary mt-8"
         >
-          Back to Collection
+          Back to List
         </Link>
       </section>
     </FadeIn>

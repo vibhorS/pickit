@@ -4,6 +4,7 @@ import { Check, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Collection } from "@/lib/types";
 import { useCollectionStatsList } from "@/store/collection-stats-selector";
+import { useCollaborationStore } from "@/store/collaboration-store";
 import {
   EMPTY_CREATED_COLLECTIONS,
   mergeCollections,
@@ -34,20 +35,49 @@ export function CaptureCollectionsStep({
   const createdCollections = useLocalCollectionStore(
     (state) => state.createdCollections,
   );
+  const collectionOverrides = useLocalCollectionStore(
+    (state) => state.collectionOverrides,
+  );
   const createCollection = useLocalCollectionStore(
     (state) => state.createCollection,
+  );
+  const memberships = useCollaborationStore(
+    (state) => state.memberships,
+  );
+  const activeUserId = useCollaborationStore(
+    (state) => state.activeUserId,
   );
   const [creating, setCreating] = useState(false);
   const [newName, setNewName] = useState("");
   const [newEmoji, setNewEmoji] = useState("🎬");
 
   const collections = useMemo(
-    () =>
-      mergeCollections(
+    () => {
+      const merged = mergeCollections(
         seedCollections,
         createdCollections ?? EMPTY_CREATED_COLLECTIONS,
-      ),
-    [seedCollections, createdCollections],
+        collectionOverrides,
+      );
+      return merged.filter((collection) => {
+        const collectionMemberships = memberships.filter(
+          (membership) =>
+            membership.collectionId === collection.id,
+        );
+        return (
+          collectionMemberships.length === 0 ||
+          collectionMemberships.some(
+            (membership) => membership.userId === activeUserId,
+          )
+        );
+      });
+    },
+    [
+      activeUserId,
+      collectionOverrides,
+      createdCollections,
+      memberships,
+      seedCollections,
+    ],
   );
   const collectionIds = useMemo(
     () => collections.map((collection) => collection.id),
@@ -97,14 +127,14 @@ export function CaptureCollectionsStep({
 
       <div className="mt-7">
         <p className="text-sm font-semibold uppercase tracking-[0.2em] text-netflix-red">
-          Collections
+          Lists
         </p>
         <h1 className="mt-2 text-3xl font-bold tracking-tight text-white sm:text-4xl">
           Where should these go?
         </h1>
         <p className="mt-2 text-sm text-netflix-muted">
           Save all {movieCount} approved {movieCount === 1 ? "movie" : "movies"}{" "}
-          to one or more collections.
+          to one or more lists.
         </p>
       </div>
 
@@ -153,7 +183,7 @@ export function CaptureCollectionsStep({
         {creating ? (
           <div className="rounded-2xl bg-white/[0.035] p-4">
             <p className="text-sm font-semibold text-white">
-              Create collection
+              Create list
             </p>
             <div className="mt-3 flex gap-2">
               <input
@@ -161,14 +191,14 @@ export function CaptureCollectionsStep({
                 onChange={(event) =>
                   setNewEmoji(event.target.value.slice(0, 4))
                 }
-                aria-label="Collection emoji"
+                aria-label="List emoji"
                 className="w-14 rounded-xl bg-black/30 px-2 py-2.5 text-center text-lg outline-none focus:ring-2 focus:ring-netflix-red/50"
               />
               <input
                 value={newName}
                 onChange={(event) => setNewName(event.target.value)}
-                placeholder="Collection name"
-                aria-label="Collection name"
+                placeholder="List name"
+                aria-label="List name"
                 className="min-w-0 flex-1 rounded-xl bg-black/30 px-3 py-2.5 text-sm outline-none placeholder:text-netflix-muted focus:ring-2 focus:ring-netflix-red/50"
               />
             </div>
@@ -197,14 +227,14 @@ export function CaptureCollectionsStep({
             className="btn-ghost flex w-full items-center justify-center gap-2"
           >
             <Plus className="size-4" />
-            Create collection
+            Create list
           </button>
         )}
       </div>
 
       {collections.length === 0 && !creating && (
         <p className="mt-2 text-center text-sm text-netflix-muted">
-          Create a collection to continue.
+          Create a list to continue.
         </p>
       )}
 

@@ -1,9 +1,7 @@
 import type { MovieVote, VoteValue } from "@/lib/types";
-import { CURRENT_USER } from "@/lib/users";
 
 /**
  * Votes are scoped to (collectionId, movieId, userId).
- * Local interactive votes always belong to CURRENT_USER.
  */
 
 export type LocalVoteState = "not-rated" | "like" | "pass";
@@ -34,7 +32,7 @@ export function createMovieVote(
   collectionId: string,
   movieId: string,
   vote: VoteValue,
-  userId: string = CURRENT_USER.id,
+  userId: string,
 ): MovieVote {
   return {
     collectionId,

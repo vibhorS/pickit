@@ -19,20 +19,17 @@ export default async function MovieDetailPage({
 
   const collection = collectionService.getById(collectionId);
 
-  if (!collection) {
-    notFound();
-  }
-
   // Server mock may not include TMDb-added titles — client store resolves those.
   const initialItem =
-    movieId && collection.items.length > 0
+    movieId && collection && collection.items.length > 0
       ? (movieService.getCollectionMovie(collection.items, movieId) ?? null)
       : null;
 
   return (
     <PageShell wide top>
       <MovieDetailResolver
-        collection={collection}
+        collectionId={collectionId}
+        seedCollection={collection ?? null}
         movieId={movieId ?? ""}
         initialItem={initialItem}
       />

@@ -1,16 +1,20 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { Layers } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { CollectionPickerCard } from "@/components/movie-night/collection-picker-card";
 import { GamesHub } from "@/components/movie-night/games-hub";
-import { QuickPickGame } from "@/components/movie-night/games/quick-pick-game";
-import { RouletteGame } from "@/components/movie-night/games/roulette-game";
-import { TournamentGame } from "@/components/movie-night/games/tournament-game";
-import { QueueOverview } from "@/components/movie-night/queue-overview";
+import { LineupGenerator } from "@/components/movie-night/lineup-generator";
 import { ReadinessSheet } from "@/components/movie-night/readiness-sheet";
 import { WinnerScreen } from "@/components/movie-night/winner-screen";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -19,17 +23,47 @@ import { MovieDetailSkeleton } from "@/components/ui/skeleton";
 import type { DecisionGameId } from "@/lib/decision-games/types";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import type { MovieNightCollectionCard } from "@/lib/movie-night-types";
+import { analytics } from "@/lib/observability/analytics";
 import type { CollectionMovie } from "@/lib/services/movie-service";
 import type { Collection, Movie } from "@/lib/types";
+import { useCollaborationStore } from "@/store/collaboration-store";
 import {
+  getTonightQueue,
   type CollectionStats,
   useCollectionStatsList,
 } from "@/store/collection-stats-selector";
 import {
   EMPTY_CREATED_COLLECTIONS,
+  mergeCollections,
   useLocalCollectionStore,
 } from "@/store/local-collection-store";
 import { useVoteStore } from "@/store/vote-store";
+import { useSessionStore } from "@/store/session-store";
+import type { QuickPickSession } from "@/lib/tonight-queue";
+import type { RouletteGameState } from "@/components/movie-night/games/roulette-game";
+import type { TournamentGameState } from "@/components/movie-night/games/tournament-game";
+
+const QuickPickGame = dynamic(
+  () =>
+    import("@/components/movie-night/games/quick-pick-game").then(
+      (mod) => mod.QuickPickGame,
+    ),
+  { loading: () => <MovieDetailSkeleton /> },
+);
+const RouletteGame = dynamic(
+  () =>
+    import("@/components/movie-night/games/roulette-game").then(
+      (mod) => mod.RouletteGame,
+    ),
+  { loading: () => <MovieDetailSkeleton /> },
+);
+const TournamentGame = dynamic(
+  () =>
+    import("@/components/movie-night/games/tournament-game").then(
+      (mod) => mod.TournamentGame,
+    ),
+  { loading: () => <MovieDetailSkeleton /> },
+);
 
 type MovieNightFlowProps = {
   cards: MovieNightCollectionCard[];
@@ -42,13 +76,14 @@ type PendingCollection = {
 
 type Step =
   | { kind: "picker" }
-  | { kind: "overview"; collection: Collection; queue: CollectionMovie[] }
+  | { kind: "generating"; collection: Collection; queue: CollectionMovie[] }
   | { kind: "games"; collection: Collection; queue: CollectionMovie[] }
   | {
       kind: "play";
       gameId: DecisionGameId;
       collection: Collection;
       queue: CollectionMovie[];
+      gameState?: unknown;
     }
   | {
       kind: "winner";
@@ -63,9 +98,29 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   const [hasHydrated, setHasHydrated] = useState(false);
   const [step, setStep] = useState<Step>({ kind: "picker" });
   const [pending, setPending] = useState<PendingCollection | null>(null);
+  const restoredSession = useRef(false);
+  const currentSession = useSessionStore((state) => state.current);
+  const setCurrentSession = useSessionStore(
+    (state) => state.setCurrentSession,
+  );
+  const clearCurrentSession = useSessionStore(
+    (state) => state.clearCurrentSession,
+  );
 
   const createdCollections = useLocalCollectionStore(
     (state) => state.createdCollections,
+  );
+  const collectionOverrides = useLocalCollectionStore(
+    (state) => state.collectionOverrides,
+  );
+  const memberships = useCollaborationStore(
+    (state) => state.memberships,
+  );
+  const activeUserId = useCollaborationStore(
+    (state) => state.activeUserId,
+  );
+  const recordActivity = useCollaborationStore(
+    (state) => state.recordActivity,
   );
   const collectionIds = useMemo(
     () => [
@@ -89,67 +144,225 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   );
 
   useEffect(() => {
-    const finish = () => setHasHydrated(true);
+    const finish = () => {
+      if (
+        !useVoteStore.persist.hasHydrated() ||
+        !useLocalCollectionStore.persist.hasHydrated() ||
+        !useCollaborationStore.persist.hasHydrated() ||
+        !useSessionStore.persist.hasHydrated()
+      ) {
+        return;
+      }
+      queueMicrotask(() => setHasHydrated(true));
+    };
     const unsubVotes = useVoteStore.persist.onFinishHydration(finish);
     const unsubLocal =
       useLocalCollectionStore.persist.onFinishHydration(finish);
+    const unsubCollaboration =
+      useCollaborationStore.persist.onFinishHydration(finish);
+    const unsubSession =
+      useSessionStore.persist.onFinishHydration(finish);
 
     if (
       useVoteStore.persist.hasHydrated() &&
-      useLocalCollectionStore.persist.hasHydrated()
+      useLocalCollectionStore.persist.hasHydrated() &&
+      useCollaborationStore.persist.hasHydrated() &&
+      useSessionStore.persist.hasHydrated()
     ) {
-      queueMicrotask(finish);
+      finish();
     }
 
     return () => {
       unsubVotes();
       unsubLocal();
+      unsubCollaboration();
+      unsubSession();
     };
   }, []);
 
   const resolvedCards = useMemo(() => {
-    const fromSeed = cards.map((card) => {
-      const items = statsById.get(card.collection.id)?.items ?? card.items;
-      return { ...card, items, movieCount: items.length };
+    const merged = mergeCollections(
+      cards.map((card) => card.collection),
+      createdCollections ?? EMPTY_CREATED_COLLECTIONS,
+      collectionOverrides,
+    );
+    return merged.map((collection) => {
+      const seedCard = cards.find(
+        (card) => card.collection.id === collection.id,
+      );
+      const items =
+        statsById.get(collection.id)?.items ?? seedCard?.items ?? [];
+      return {
+        collection,
+        items,
+        movieCount: items.length,
+      };
+    }).filter((card) => {
+      const collectionMemberships = memberships.filter(
+        (membership) =>
+          membership.collectionId === card.collection.id,
+      );
+      return (
+        collectionMemberships.length === 0 ||
+        collectionMemberships.some(
+          (membership) => membership.userId === activeUserId,
+        )
+      );
     });
-
-    const seedIds = new Set(fromSeed.map((card) => card.collection.id));
-    const fromCreated = (createdCollections ?? EMPTY_CREATED_COLLECTIONS)
-      .filter((collection) => !seedIds.has(collection.id))
-      .map((collection) => {
-        const localItems = statsById.get(collection.id)?.items ?? [];
-        return {
-          collection,
-          items: localItems,
-          movieCount: localItems.length,
-        };
-      });
-
-    return [...fromSeed, ...fromCreated];
-  }, [cards, createdCollections, statsById]);
+  }, [
+    activeUserId,
+    cards,
+    collectionOverrides,
+    createdCollections,
+    memberships,
+    statsById,
+  ]);
 
   const cardReadiness = useMemo(() => {
     return resolvedCards.map((card) => {
       const stats = statsById.get(card.collection.id);
       if (!stats) return null;
-      const mutualIds = new Set(
-        stats.mutualMatchMovies.map((movie) => movie.id),
-      );
-      const queue = stats.items.filter((item) =>
-        mutualIds.has(item.movie.id),
-      );
 
       return {
         collectionId: card.collection.id,
         stats,
-        queue,
+        queue: getTonightQueue(card.collection.id),
       };
     }).filter((entry): entry is NonNullable<typeof entry> => entry != null);
   }, [resolvedCards, statsById]);
 
-  function openOverview(collection: Collection, queue: CollectionMovie[]) {
+  const saveMovieNightSession = useCallback(
+    (
+      collectionId: string,
+      phase: "overview" | "generating" | "games" | "play",
+      gameId?: DecisionGameId,
+      gameState?: unknown,
+      queue?: CollectionMovie[],
+    ) => {
+      setCurrentSession({
+        kind: "movie-night",
+        collectionId,
+        phase,
+        gameId,
+        gameState,
+        queueMovieIds: queue?.map((item) => item.movie.id),
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    [setCurrentSession],
+  );
+
+  const saveGameState = useCallback(
+    (gameState: unknown) => {
+      const active = useSessionStore.getState().current;
+      if (
+        active?.kind !== "movie-night" ||
+        active.phase !== "play" ||
+        !active.gameId
+      ) {
+        return;
+      }
+      setCurrentSession({
+        ...active,
+        gameState,
+        updatedAt: new Date().toISOString(),
+      });
+    },
+    [setCurrentSession],
+  );
+
+  useEffect(() => {
+    if (
+      !hasHydrated ||
+      restoredSession.current ||
+      currentSession?.kind !== "movie-night"
+    ) {
+      return;
+    }
+    const card = resolvedCards.find(
+      (entry) =>
+        entry.collection.id === currentSession.collectionId,
+    );
+    const info = cardReadiness.find(
+      (entry) =>
+        entry.collectionId === currentSession.collectionId,
+    );
+    if (!card || !info) {
+      clearCurrentSession("movie-night");
+      restoredSession.current = true;
+      return;
+    }
+
+    restoredSession.current = true;
+    let resumedStep: Step | null = null;
+    const resumedQueue = currentSession.queueMovieIds
+      ? currentSession.queueMovieIds.flatMap((movieId) => {
+          const item = info.stats.items.find(
+            (entry) => entry.movie.id === movieId,
+          );
+          return item ? [item] : [];
+        })
+      : info.queue;
+    if (currentSession.phase === "generating") {
+      resumedStep = {
+        kind: "generating",
+        collection: card.collection,
+        queue: resumedQueue,
+      };
+    } else if (
+      currentSession.phase === "overview" ||
+      currentSession.phase === "games"
+    ) {
+      resumedStep = {
+        kind: "games",
+        collection: card.collection,
+        queue: resumedQueue,
+      };
+    } else if (currentSession.gameId) {
+      resumedStep = {
+        kind: "play",
+        gameId: currentSession.gameId,
+        gameState: currentSession.gameState,
+        collection: card.collection,
+        queue: resumedQueue,
+      };
+    }
+    if (resumedStep) {
+      queueMicrotask(() => setStep(resumedStep));
+    }
+  }, [
+    cardReadiness,
+    clearCurrentSession,
+    currentSession,
+    hasHydrated,
+    resolvedCards,
+  ]);
+
+  function openGames(collection: Collection, queue: CollectionMovie[]) {
     setPending(null);
-    setStep({ kind: "overview", collection, queue });
+    setStep({ kind: "games", collection, queue });
+    saveMovieNightSession(
+      collection.id,
+      "games",
+      undefined,
+      undefined,
+      queue,
+    );
+  }
+
+  function generateLineup(
+    collection: Collection,
+    queue: CollectionMovie[],
+  ) {
+    setPending(null);
+    setStep({ kind: "generating", collection, queue });
+    saveMovieNightSession(
+      collection.id,
+      "generating",
+      undefined,
+      undefined,
+      queue,
+    );
   }
 
   function handleSelectCollection(card: (typeof resolvedCards)[number]) {
@@ -158,7 +371,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
     );
     if (!info) return;
 
-    if (info.stats.readinessState !== "ready") {
+    if (info.queue.length === 0) {
       setPending({
         collection: card.collection,
         stats: info.stats,
@@ -166,14 +379,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
       return;
     }
 
-    openOverview(card.collection, info.queue);
-  }
-
-  function queueFor(collectionId: string): CollectionMovie[] {
-    return (
-      cardReadiness.find((entry) => entry.collectionId === collectionId)
-        ?.queue ?? []
-    );
+    generateLineup(card.collection, info.queue);
   }
 
   if (!hasHydrated) {
@@ -189,15 +395,21 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
       <FadeIn className="mx-auto w-full max-w-lg">
         <EmptyState
           icon={<Layers className="size-7" strokeWidth={1.5} />}
-          title="No collections yet"
-          description="Add a few movies to a collection first, then start Movie Night."
+          title="No lists yet"
+          description="Add a few movies to a list first, then start Movie Night."
+          actionHref={{ label: "Go to Lists", href: "/collections" }}
         />
-        <div className="text-center">
-          <Link href="/collections" prefetch className="btn-primary">
-            Go to Collections
-          </Link>
-        </div>
       </FadeIn>
+    );
+  }
+
+  if (step.kind === "generating") {
+    return (
+      <LineupGenerator
+        collection={step.collection}
+        queue={step.queue}
+        onComplete={() => openGames(step.collection, step.queue)}
+      />
     );
   }
 
@@ -210,15 +422,21 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
         movie={step.movie}
         source={winnerItem?.source}
         metadata={winnerItem?.metadata}
-        onHome={() => router.push("/")}
-        onPlayAnotherGame={() =>
+        addedByUserId={winnerItem?.addedByUserId}
+        onPickAgain={() => {
           setStep({
             kind: "games",
             collection: step.collection,
             queue: step.queue,
-          })
-        }
-        onChooseCollection={() => setStep({ kind: "picker" })}
+          });
+          saveMovieNightSession(
+            step.collection.id,
+            "games",
+            undefined,
+            undefined,
+            step.queue,
+          );
+        }}
       />
     );
   }
@@ -227,6 +445,22 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
     const { collection, queue, gameId } = step;
 
     function handleWin(movie: Movie) {
+      clearCurrentSession("movie-night");
+      recordActivity({
+        collectionId: collection.id,
+        userId: activeUserId,
+        type: "movie-night-completed",
+        movieId: movie.id,
+      });
+      analytics.track("movie_picked", {
+        gameId,
+        collectionId: collection.id,
+        movieId: movie.id,
+      });
+      analytics.track("movie_night_completed", {
+        gameId,
+        collectionId: collection.id,
+      });
       setStep({
         kind: "winner",
         collection,
@@ -238,6 +472,13 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
 
     function backToGames() {
       setStep({ kind: "games", collection, queue });
+      saveMovieNightSession(
+        collection.id,
+        "games",
+        undefined,
+        undefined,
+        queue,
+      );
     }
 
     if (gameId === "quick-pick") {
@@ -246,7 +487,12 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
           queue={queue}
           onWin={handleWin}
           onBackToGames={backToGames}
-          onChooseCollection={() => setStep({ kind: "picker" })}
+          initialSession={step.gameState as QuickPickSession | undefined}
+          onSessionChange={saveGameState}
+          onChooseCollection={() => {
+            clearCurrentSession("movie-night");
+            setStep({ kind: "picker" });
+          }}
         />
       );
     }
@@ -257,7 +503,12 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
           queue={queue}
           onWin={handleWin}
           onBackToGames={backToGames}
-          onChooseCollection={() => setStep({ kind: "picker" })}
+          initialState={step.gameState as RouletteGameState | undefined}
+          onStateChange={saveGameState}
+          onChooseCollection={() => {
+            clearCurrentSession("movie-night");
+            setStep({ kind: "picker" });
+          }}
         />
       );
     }
@@ -267,6 +518,8 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
         queue={queue}
         onWin={handleWin}
         onBackToGames={backToGames}
+        initialState={step.gameState as TournamentGameState | undefined}
+        onStateChange={saveGameState}
       />
     );
   }
@@ -274,74 +527,39 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   if (step.kind === "games") {
     return (
       <GamesHub
-        onBack={() =>
-          setStep({
-            kind: "overview",
-            collection: step.collection,
-            queue: step.queue,
-          })
-        }
-        onSelect={(gameId) =>
+        vibeName={step.collection.name}
+        vibeEmoji={step.collection.emoji}
+        queueSize={step.queue.length}
+        onBack={() => {
+          clearCurrentSession("movie-night");
+          setStep({ kind: "picker" });
+        }}
+        onSelect={(gameId) => {
+          analytics.track("decision_mode_selected", {
+            gameId,
+            collectionId: step.collection.id,
+          });
           setStep({
             kind: "play",
             gameId,
             collection: step.collection,
             queue: step.queue,
-          })
-        }
-      />
-    );
-  }
-
-  if (step.kind === "overview") {
-    if (step.queue.length === 0) {
-      return (
-        <FadeIn className="mx-auto w-full max-w-lg">
-          <EmptyState
-            emoji="❤️"
-            title="No mutual matches yet"
-            description="Tonight's Queue fills when you both mark I'd Watch on the same movies."
-          />
-          <div className="flex flex-col gap-3 px-4">
-            <button
-              type="button"
-              onClick={() => router.push(`/rate/${step.collection.id}`)}
-              className="btn-primary w-full"
-            >
-              Rate Movies
-            </button>
-            <button
-              type="button"
-              onClick={() => setStep({ kind: "picker" })}
-              className="btn-secondary w-full"
-            >
-              Choose Another Collection
-            </button>
-          </div>
-        </FadeIn>
-      );
-    }
-
-    return (
-      <QueueOverview
-        collectionName={step.collection.name}
-        collectionEmoji={step.collection.emoji}
-        queue={step.queue}
-        onContinue={() =>
-          setStep({
-            kind: "games",
-            collection: step.collection,
-            queue: step.queue,
-          })
-        }
-        onBack={() => setStep({ kind: "picker" })}
+          });
+          saveMovieNightSession(
+            step.collection.id,
+            "play",
+            gameId,
+            undefined,
+            step.queue,
+          );
+        }}
       />
     );
   }
 
   return (
     <>
-      <FadeIn className="mx-auto w-full max-w-lg">
+      <FadeIn className="mx-auto w-full max-w-4xl">
         <div className="mb-8">
           <Link
             href="/"
@@ -355,10 +573,10 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
 
         <div className="mb-8">
           <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-            Movie Night
+            What&apos;s the vibe like tonight?
           </h1>
           <p className="mt-2 text-sm text-netflix-muted">
-            Choose a collection — then pick how you want to decide.
+            Choose where tonight begins.
           </p>
         </div>
 
@@ -379,6 +597,9 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
                 <CollectionPickerCard
                   collection={card.collection}
                   movieCount={card.movieCount}
+                  posterUrls={card.items
+                    .map((item) => item.movie.posterUrl)
+                    .filter(Boolean)}
                   stats={info.stats}
                   onSelect={() => handleSelectCollection(card)}
                 />
@@ -393,10 +614,6 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
         stats={pending?.stats ?? null}
         collectionName={pending?.collection.name ?? ""}
         onDismiss={() => setPending(null)}
-        onContinue={() => {
-          if (!pending) return;
-          openOverview(pending.collection, queueFor(pending.collection.id));
-        }}
         onRate={() => {
           if (!pending) return;
           router.push(`/rate/${pending.collection.id}`);

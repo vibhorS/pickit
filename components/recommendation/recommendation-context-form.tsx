@@ -10,6 +10,7 @@ import type {
   RecommendationMetadata,
   RecommendationSource,
 } from "@/lib/types";
+import type { RecommendationContextDraft } from "@/store/session-store";
 
 type RecommendationContextFormProps = {
   initialPlatform?: string;
@@ -19,6 +20,8 @@ type RecommendationContextFormProps = {
   submitLabel?: string;
   busy?: boolean;
   error?: string | null;
+  initialDraft?: RecommendationContextDraft;
+  onDraftChange?: (draft: RecommendationContextDraft) => void;
   onBack?: () => void;
   onSubmit: (metadata: RecommendationMetadata) => void;
 };
@@ -31,6 +34,8 @@ export function RecommendationContextForm({
   submitLabel = "Save Recommendation",
   busy = false,
   error,
+  initialDraft,
+  onDraftChange,
   onBack,
   onSubmit,
 }: RecommendationContextFormProps) {
@@ -38,13 +43,28 @@ export function RecommendationContextForm({
     (platform) => platform.type === initialPlatform?.toLowerCase(),
   );
   const [selected, setSelected] = useState(
-    knownInitial?.type ?? (initialPlatform ? "other" : ""),
+    initialDraft?.selected ??
+      knownInitial?.type ??
+      (initialPlatform ? "other" : ""),
   );
-  const [recommendedBy, setRecommendedBy] = useState("");
+  const [recommendedBy, setRecommendedBy] = useState(
+    initialDraft?.recommendedBy ?? "",
+  );
   const [otherSource, setOtherSource] = useState(
-    knownInitial ? "" : initialPlatformLabel ?? "",
+    initialDraft?.otherSource ??
+      (knownInitial ? "" : initialPlatformLabel ?? ""),
   );
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] = useState(initialDraft?.notes ?? "");
+
+  function emitDraft(next: Partial<RecommendationContextDraft>) {
+    onDraftChange?.({
+      selected,
+      recommendedBy,
+      otherSource,
+      notes,
+      ...next,
+    });
+  }
 
   function handleSubmit() {
     if (!selected) return;
@@ -110,7 +130,10 @@ export function RecommendationContextForm({
             <button
               key={platform.type}
               type="button"
-              onClick={() => setSelected(platform.type)}
+              onClick={() => {
+                setSelected(platform.type);
+                emitDraft({ selected: platform.type });
+              }}
               aria-pressed={active}
               className={`inline-flex items-center gap-1.5 rounded-full px-3.5 py-2 text-sm font-medium transition ${
                 active
@@ -136,7 +159,10 @@ export function RecommendationContextForm({
           <input
             id="recommended-by"
             value={recommendedBy}
-            onChange={(event) => setRecommendedBy(event.target.value)}
+            onChange={(event) => {
+              setRecommendedBy(event.target.value);
+              emitDraft({ recommendedBy: event.target.value });
+            }}
             placeholder="Rahul, Neha, Mum…"
             maxLength={60}
             autoFocus
@@ -156,7 +182,10 @@ export function RecommendationContextForm({
           <input
             id="other-source"
             value={otherSource}
-            onChange={(event) => setOtherSource(event.target.value)}
+            onChange={(event) => {
+              setOtherSource(event.target.value);
+              emitDraft({ otherSource: event.target.value });
+            }}
             placeholder="Podcast, newsletter, film club…"
             maxLength={60}
             autoFocus
@@ -175,7 +204,10 @@ export function RecommendationContextForm({
         <textarea
           id="recommendation-note"
           value={notes}
-          onChange={(event) => setNotes(event.target.value)}
+          onChange={(event) => {
+            setNotes(event.target.value);
+            emitDraft({ notes: event.target.value });
+          }}
           placeholder="Everyone says the ending is insane."
           maxLength={160}
           rows={3}

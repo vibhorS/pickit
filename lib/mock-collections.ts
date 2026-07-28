@@ -41,7 +41,6 @@ export const collections: Collection[] = [
     name: "Date Night",
     emoji: "💕",
     description: "Movies we've saved for our next movie night.",
-    shared: true,
     items: [
       {
         movieId: "la-la-land",
@@ -85,7 +84,6 @@ export const collections: Collection[] = [
     name: "Sci-Fi",
     emoji: "🚀",
     description: "Mind-bending worlds, big ideas, and late-night rabbit holes.",
-    shared: false,
     items: [
       {
         movieId: "arrival",
@@ -128,7 +126,6 @@ export const collections: Collection[] = [
     name: "Comfort Movies",
     emoji: "🛋️",
     description: "Feel-good titles for rainy evenings and rewatch Sundays.",
-    shared: true,
     items: [
       {
         movieId: "paddington-2",

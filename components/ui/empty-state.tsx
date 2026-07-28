@@ -1,6 +1,7 @@
 "use client";
 
-import { AnimatePresence, motion } from "framer-motion";
+import Link from "next/link";
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import type { ReactNode } from "react";
 import { MOTION } from "@/lib/motion";
 
@@ -25,13 +26,17 @@ export function EmptyState({
   title,
   description,
   action,
+  actionHref,
 }: EmptyStateProps) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <motion.div
-      initial={{ opacity: 0, y: 8 }}
+      initial={reduceMotion ? false : { opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: MOTION.duration, ease: MOTION.ease }}
       className="px-4 py-14 text-center sm:px-8 sm:py-16"
+      role="status"
     >
       <div
         aria-hidden="true"
@@ -47,14 +52,23 @@ export function EmptyState({
       <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-netflix-muted sm:text-[0.9375rem]">
         {description}
       </p>
-      {action && (
-        <button
-          type="button"
-          onClick={action.onClick}
-          className="btn-primary mt-8 min-h-11 px-7"
-        >
-          {action.label}
-        </button>
+      {(action || actionHref) && (
+        <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+          {action && (
+            <button
+              type="button"
+              onClick={action.onClick}
+              className="btn-primary min-h-11 px-7"
+            >
+              {action.label}
+            </button>
+          )}
+          {actionHref && (
+            <Link href={actionHref.href} prefetch className="btn-primary min-h-11 px-7">
+              {actionHref.label}
+            </Link>
+          )}
+        </div>
       )}
     </motion.div>
   );
@@ -65,17 +79,19 @@ type ToastProps = {
 };
 
 export function Toast({ message }: ToastProps) {
+  const reduceMotion = useReducedMotion();
+
   return (
     <AnimatePresence>
       {message && (
         <motion.div
           role="status"
           aria-live="polite"
-          initial={{ opacity: 0, y: 12 }}
+          initial={reduceMotion ? false : { opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 8 }}
+          exit={reduceMotion ? undefined : { opacity: 0, y: 8 }}
           transition={{ duration: MOTION.duration, ease: MOTION.ease }}
-          className="fixed bottom-6 left-1/2 z-[60] -translate-x-1/2 rounded-full bg-netflix-surface/95 px-5 py-3 text-sm font-medium text-white shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur-sm"
+          className="fixed bottom-24 left-1/2 z-[60] max-w-[min(90vw,24rem)] -translate-x-1/2 rounded-full bg-netflix-surface/95 px-5 py-3 text-center text-sm font-medium text-white shadow-[0_8px_30px_rgba(0,0,0,0.45)] backdrop-blur-sm"
         >
           {message}
         </motion.div>

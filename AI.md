@@ -1,17 +1,18 @@
-# Decision
+# PickIt
 
 ## Product
 
-Decision helps couples continuously collect recommendations and effortlessly decide together.
+PickIt helps two people stop scrolling and start watching.
 
-The first category is movies.
+It is a decision engine for movie night, not a movie database, watchlist
+manager, recommendation tracker, or productivity tool.
 
 ## Core Principles
 
-- Capture should take under 10 seconds.
-- Users discover continuously.
-- Users decide occasionally.
-- Build shared taste over time.
+- Get from opening the app to a winner in five taps or fewer.
+- Organize the primary journey around tonight's mood, not list management.
+- Keep recommendation capture and list maintenance secondary.
+- Build shared taste over time without making users manage data.
 - Never ask users to retype information they already have.
 - Optimize for reducing decision fatigue.
 
@@ -37,23 +38,53 @@ Zustand
 
 TMDb
 
-Supabase (later)
+Supabase (schema + client scaffold; local repositories until credentials are set)
+
+## Collaboration architecture
+
+- Auth: `lib/auth/auth-service.ts` + `store/auth-store.ts`
+- Repositories: `lib/repositories/` (local-first, cloud-swappable)
+- Sync: `lib/sync/sync-engine.ts` (optimistic updates, offline queue, retries)
+- Partners: `lib/services/collaboration/relationship-service.ts`
+- Permissions: `lib/services/collaboration/permissions.ts`
+- Events / notifications / presence: `lib/domain/events.ts`, notification + presence services
+- Migration: `lib/services/collaboration/migration-service.ts`
+- Supabase SQL: `supabase/schema.sql`
+
+## Cloud foundation (Phase 2A)
+
+- Schema: `supabase/migrations/20260729_phase2a_cloud_foundation.sql`
+- Clients: `lib/supabase/client.ts` (UI never imports this — use repositories)
+- Cloud repos: `lib/repositories/cloud/`
+- Auth facade: `lib/auth/cloud-auth.ts`
+- Sync / offline queue: `lib/sync/cloud-sync-engine.ts`, `lib/sync/offline-queue.ts`
+- React Query hooks: `hooks/use-cloud-data.ts`
+- Migration: `lib/services/cloud/migration.ts`
+- Seed: `npm run db:seed` / `npm run db:reset`
+
+Configure `.env.local` with Supabase URL + anon key, enable Anonymous sign-in for guests, apply the migration, then seed.
 
 ## MVP
 
-Collections
+Mood / List Selection
 
-Movie Search
+Tonight Queue
 
-Voting
+Decision Modes
 
-Mutual Matches
+Quick Pick
 
-Tonight's Picks
+Roulette
 
-Streaming Availability
+Tournament
 
-Sharing
+Winner
+
+Independent Ratings
+
+Recommendation Capture
+
+List Management
 
 ## Future
 

@@ -36,3 +36,16 @@ export const staggerItem = {
     transition: { duration: MOTION.duration, ease: MOTION.ease },
   },
 };
+
+/** Instant variants when the user prefers reduced motion. */
+export function withReducedMotion<T extends { transition?: unknown }>(
+  variants: T,
+  reduce: boolean | null,
+): T {
+  if (!reduce) return variants;
+  return {
+    ...variants,
+    transition: { duration: 0 },
+  };
+}
+

@@ -17,9 +17,18 @@ type TournamentGameProps = {
   queue: CollectionMovie[];
   onWin: (movie: Movie) => void;
   onBackToGames: () => void;
+  initialState?: TournamentGameState;
+  onStateChange?: (state: TournamentGameState) => void;
 };
 
 type Pair = [CollectionMovie, CollectionMovie | null];
+
+export type TournamentGameState = {
+  round: Pair[];
+  pairIndex: number;
+  winners: CollectionMovie[];
+  remainingInBracket: number;
+};
 
 function buildPairs(contenders: CollectionMovie[]): Pair[] {
   const pairs: Pair[] = [];
@@ -33,12 +42,22 @@ export function TournamentGame({
   queue,
   onWin,
   onBackToGames,
+  initialState,
+  onStateChange,
 }: TournamentGameProps) {
   const initial = useMemo(() => shuffleItems(queue), [queue]);
-  const [round, setRound] = useState(() => buildPairs(initial));
-  const [pairIndex, setPairIndex] = useState(0);
-  const [winners, setWinners] = useState<CollectionMovie[]>([]);
-  const [remainingInBracket, setRemainingInBracket] = useState(initial.length);
+  const [round, setRound] = useState(
+    () => initialState?.round ?? buildPairs(initial),
+  );
+  const [pairIndex, setPairIndex] = useState(
+    () => initialState?.pairIndex ?? 0,
+  );
+  const [winners, setWinners] = useState<CollectionMovie[]>(
+    () => initialState?.winners ?? [],
+  );
+  const [remainingInBracket, setRemainingInBracket] = useState(
+    () => initialState?.remainingInBracket ?? initial.length,
+  );
 
   const currentPair = round[pairIndex] as Pair | undefined;
   const roundLabel = getTournamentRoundLabel(remainingInBracket);
@@ -72,6 +91,21 @@ export function TournamentGame({
     advance(currentPair[0]);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional one-shot bye
   }, [currentPair, pairIndex, round]);
+
+  useEffect(() => {
+    onStateChange?.({
+      round,
+      pairIndex,
+      winners,
+      remainingInBracket,
+    });
+  }, [
+    onStateChange,
+    pairIndex,
+    remainingInBracket,
+    round,
+    winners,
+  ]);
 
   if (!currentPair) {
     return null;

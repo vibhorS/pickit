@@ -16,8 +16,13 @@ type MovieGridCardProps = {
   movie: Movie;
   source: RecommendationSource;
   metadata?: RecommendationMetadata;
-  vote?: VoteValue;
-  partnerVote?: VoteValue;
+  memberRatings: Array<{
+    userId: string;
+    name: string;
+    isCurrentUser: boolean;
+    vote?: VoteValue;
+  }>;
+  addedByName?: string;
   onOpen?: (movie: Movie) => void;
 };
 
@@ -25,17 +30,22 @@ export function MovieGridCard({
   movie,
   source,
   metadata,
-  vote,
-  partnerVote,
+  memberRatings,
+  addedByName,
   onOpen,
 }: MovieGridCardProps) {
+  const vote = memberRatings.find(
+    (rating) => rating.isCurrentUser,
+  )?.vote;
   const isWatch = vote === "like";
   const isPass = vote === "pass";
   const isNew = !vote;
-  const isMutual = vote === "like" && partnerVote === "like";
-  const mineGlyph = getVoteGlyph(vote);
-  const partnerGlyph = getVoteGlyph(partnerVote);
-  const pairLabel = `${mineGlyph}${partnerGlyph}`;
+  const isMutual =
+    memberRatings.length > 1 &&
+    memberRatings.every((rating) => rating.vote === "like");
+  const waitingMembers = memberRatings.filter(
+    (rating) => !rating.vote,
+  );
 
   return (
     <motion.article
@@ -98,18 +108,31 @@ export function MovieGridCard({
           {movie.title}
         </h2>
         <RecommendationContext metadata={metadata} source={source} />
-        <div className="flex items-center justify-between gap-2">
+        {addedByName && (
+          <p className="text-[0.625rem] text-netflix-muted/55">
+            Added by {addedByName}
+          </p>
+        )}
+        <div className="flex items-start justify-between gap-2">
           <p className="text-[0.6875rem] text-netflix-muted/70">
             {movie.rating.toFixed(1)}
           </p>
-          <p
-            aria-label={`You ${mineGlyph}, partner ${partnerGlyph}`}
-            className={`text-[0.75rem] tracking-tight ${
-              isMutual ? "text-rose-300/90" : "text-netflix-muted/65"
-            }`}
-          >
-            {pairLabel}
-          </p>
+          <div className="text-right text-[0.625rem] leading-relaxed text-netflix-muted/65">
+            {memberRatings.map((rating) => (
+              <p key={rating.userId}>
+                {rating.isCurrentUser ? "You" : rating.name}{" "}
+                {getVoteGlyph(rating.vote)}
+              </p>
+            ))}
+            {isMutual && <p className="text-rose-300/90">Mutual</p>}
+            {!isMutual &&
+              waitingMembers.map((rating) => (
+                <p key={`waiting-${rating.userId}`}>
+                  Waiting for{" "}
+                  {rating.isCurrentUser ? "You" : rating.name}
+                </p>
+              ))}
+          </div>
         </div>
       </div>
     </motion.article>

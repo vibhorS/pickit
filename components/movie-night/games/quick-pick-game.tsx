@@ -1,11 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useState } from "react";
-import {
-  SwipeableChoiceShell,
-  type ChoiceDirection,
-} from "@/components/decide/swipeable-choice-shell";
+import { useEffect, useState } from "react";
 import { DecisionMovieCard } from "@/components/movie-night/decision-movie-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FadeIn } from "@/components/ui/fade-in";
@@ -13,7 +9,6 @@ import { MOTION } from "@/lib/motion";
 import type { CollectionMovie } from "@/lib/services/movie-service";
 import {
   createQuickPickSession,
-  getQuickPickProgress,
   skipQuickPickMovie,
   type QuickPickSession,
 } from "@/lib/tonight-queue";
@@ -24,6 +19,8 @@ type QuickPickGameProps = {
   onWin: (movie: Movie) => void;
   onBackToGames: () => void;
   onChooseCollection: () => void;
+  initialSession?: QuickPickSession;
+  onSessionChange?: (session: QuickPickSession) => void;
 };
 
 export function QuickPickGame({
@@ -31,24 +28,27 @@ export function QuickPickGame({
   onWin,
   onBackToGames,
   onChooseCollection,
+  initialSession,
+  onSessionChange,
 }: QuickPickGameProps) {
   const [session, setSession] = useState<QuickPickSession>(() =>
-    createQuickPickSession(queue),
+    initialSession ?? createQuickPickSession(queue),
   );
+  const [showDetails, setShowDetails] = useState(false);
 
-  const { currentIndex, total, remainingCount, skippedCount } =
-    getQuickPickProgress(session);
-  const progress =
-    total > 0 ? Math.round(((currentIndex - 1) / total) * 100) : 0;
-  const current = session.remaining[0];
+  useEffect(() => {
+    onSessionChange?.(session);
+  }, [onSessionChange, session]);
 
-  if (!current || remainingCount === 0) {
+  const active = session.remaining[0];
+
+  if (!active) {
     return (
       <FadeIn className="mx-auto w-full max-w-lg">
         <EmptyState
           emoji="🍿"
-          title="We couldn't decide tonight."
-          description="Every candidate was skipped. Mutual matches are unchanged."
+          title="Nothing clicked yet?"
+          description="Start over or try another way to pick tonight's movie."
         />
         <div className="flex flex-col gap-3 px-4">
           <button
@@ -63,88 +63,81 @@ export function QuickPickGame({
             onClick={onBackToGames}
             className="btn-secondary w-full"
           >
-            Choose Another Game
+            Try Another Game
           </button>
           <button
             type="button"
             onClick={onChooseCollection}
             className="btn-ghost w-full"
           >
-            Choose Another Collection
+            Change Vibe
           </button>
         </div>
       </FadeIn>
     );
   }
 
-  const active = current;
-
-  function handleChoice(direction: ChoiceDirection) {
-    if (direction === "accept") {
-      onWin(active.movie);
-      return;
-    }
-    setSession((currentSession) => skipQuickPickMovie(currentSession));
+  function showAnother() {
+    setShowDetails(false);
+    setSession((current) => skipQuickPickMovie(current));
   }
 
   return (
-    <FadeIn className="mx-auto w-full max-w-2xl">
-      <div className="mb-5 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <p className="text-sm font-medium text-white">
-            Movie {currentIndex} of {total}
-          </p>
-          <p className="text-sm text-netflix-muted">
-            {remainingCount} remaining · {skippedCount} skipped
-          </p>
-        </div>
-        <div className="h-1 overflow-hidden rounded-full bg-white/[0.06]">
-          <motion.div
-            className="h-full rounded-full bg-netflix-red"
-            initial={false}
-            animate={{ width: `${progress}%` }}
-            transition={{ duration: MOTION.durationSlow, ease: MOTION.ease }}
-          />
-        </div>
+    <FadeIn className="mx-auto w-full max-w-4xl">
+      <div className="mb-5 flex items-center justify-between gap-4">
+        <button
+          type="button"
+          onClick={onBackToGames}
+          className="btn-ghost -ml-3 inline-flex items-center gap-2"
+        >
+          <span aria-hidden="true">←</span>
+          Games
+        </button>
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-netflix-red">
+          Quick Pick
+        </p>
       </div>
 
       <AnimatePresence mode="wait">
         <motion.div
           key={active.movie.id}
-          initial={{ opacity: 0, y: 8 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -6 }}
-          transition={{ duration: MOTION.duration, ease: MOTION.ease }}
+          initial={{ opacity: 0, scale: 0.985, y: 10 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.985, x: -20 }}
+          transition={{ duration: MOTION.durationSlow, ease: MOTION.ease }}
+          className="overflow-hidden rounded-3xl bg-netflix-surface shadow-[var(--shadow-elevated)]"
         >
-          <SwipeableChoiceShell
-            acceptLabel="Watch Tonight"
-            skipLabel="Skip Tonight"
-            onChoice={handleChoice}
-            footer={(choose) => (
-              <div className="flex flex-col gap-3 px-5 pb-5 sm:flex-row sm:px-8 sm:pb-7">
-                <button
-                  type="button"
-                  onClick={() => choose("skip")}
-                  className="btn-secondary w-full sm:flex-1"
-                >
-                  Skip Tonight
-                </button>
-                <button
-                  type="button"
-                  onClick={() => choose("accept")}
-                  className="btn-primary w-full sm:flex-1"
-                >
-                  Watch Tonight
-                </button>
-              </div>
-            )}
-          >
-            <DecisionMovieCard
-              movie={active.movie}
-              source={active.source}
-              metadata={active.metadata}
-            />
-          </SwipeableChoiceShell>
+          <DecisionMovieCard
+            movie={active.movie}
+            source={active.source}
+            metadata={active.metadata}
+            addedByUserId={active.addedByUserId}
+            showOverview={showDetails}
+          />
+
+          <div className="grid gap-3 px-5 pb-6 pt-4 sm:grid-cols-2 sm:px-8 sm:pb-8">
+            <button
+              type="button"
+              onClick={() => onWin(active.movie)}
+              className="btn-primary min-h-12 w-full sm:col-span-2"
+            >
+              ❤️ That&apos;s the One
+            </button>
+            <button
+              type="button"
+              onClick={showAnother}
+              className="btn-secondary min-h-11 w-full"
+            >
+              🎲 Show Another
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowDetails((value) => !value)}
+              className="btn-ghost min-h-11 w-full"
+            >
+              📖 {showDetails ? "Hide Details" : "More Details"}
+            </button>
+          </div>
         </motion.div>
       </AnimatePresence>
     </FadeIn>

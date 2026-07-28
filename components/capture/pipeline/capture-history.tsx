@@ -3,6 +3,7 @@
 import { History } from "lucide-react";
 import { getSourceIcon } from "@/lib/recommendation-source";
 import type { CaptureSession } from "@/lib/capture/types";
+import { useCollaborationStore } from "@/store/collaboration-store";
 
 type CaptureHistoryProps = {
   sessions: CaptureSession[];
@@ -38,6 +39,10 @@ export function CaptureHistory({
   sessions,
   onSelect,
 }: CaptureHistoryProps) {
+  const users = useCollaborationStore((state) => state.users);
+  const activeUserId = useCollaborationStore(
+    (state) => state.activeUserId,
+  );
   return (
     <section className="mx-auto mt-14 w-full max-w-2xl border-t border-white/5 pt-8">
       <div className="flex items-center gap-2">
@@ -56,6 +61,9 @@ export function CaptureHistory({
           {sessions.map((session) => {
             const Icon = getSourceIcon(session.result.source.type);
             const count = session.approvedCandidateIds.length;
+            const savedBy = users.find(
+              (user) => user.id === session.savedByUserId,
+            );
             return (
               <li key={session.id}>
                 <button
@@ -72,6 +80,15 @@ export function CaptureHistory({
                     </span>
                     <span className="mt-0.5 block text-xs text-netflix-muted">
                       {count} {count === 1 ? "movie" : "movies"}
+                      {session.savedByUserId && (
+                        <>
+                          {" "}
+                          · by{" "}
+                          {session.savedByUserId === activeUserId
+                            ? "you"
+                            : savedBy?.name ?? "a member"}
+                        </>
+                      )}
                     </span>
                   </span>
                   <span className="text-xs text-netflix-muted">

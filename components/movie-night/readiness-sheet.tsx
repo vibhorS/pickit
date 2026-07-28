@@ -9,7 +9,6 @@ type ReadinessSheetProps = {
   open: boolean;
   stats: CollectionStats | null;
   collectionName: string;
-  onContinue: () => void;
   onRate: () => void;
   onDismiss: () => void;
 };
@@ -18,27 +17,34 @@ export function ReadinessSheet({
   open,
   stats,
   collectionName,
-  onContinue,
   onRate,
   onDismiss,
 }: ReadinessSheetProps) {
-  const waitingForPartner =
-    stats?.readinessState === "waiting-for-partner";
+  const waitingForMembers =
+    stats?.readinessState === "waiting-for-members";
   const needsMyRatings =
-    stats?.readinessState === "needs-my-ratings";
-  const title = waitingForPartner
-    ? "Waiting for partner"
+    stats?.readinessState === "waiting-for-you";
+  const noMutualMatches =
+    stats?.readinessState === "no-mutual-matches";
+  const title = waitingForMembers
+    ? stats?.readinessLabel ?? "Waiting for members"
     : needsMyRatings
       ? `${stats.unratedMine} ${
           stats.unratedMine === 1 ? "movie needs" : "movies need"
         } your rating`
+      : noMutualMatches
+        ? "No mutual matches yet"
       : `${collectionName} isn’t ready yet`;
-  const description = waitingForPartner
-    ? `You've rated everything. Your partner has ${
-        stats?.unratedPartner ?? 0
-      } ${(stats?.unratedPartner ?? 0) === 1 ? "movie" : "movies"} left.`
+  const description = waitingForMembers
+    ? `You've rated everything. ${stats?.waitingMemberNames.join(", ")} ${
+        stats?.waitingMemberNames.length === 1 ? "has" : "have"
+      } ${stats?.unratedOthers ?? 0} ${
+        (stats?.unratedOthers ?? 0) === 1 ? "rating" : "ratings"
+      } left.`
     : needsMyRatings
-      ? "Finish your ratings to see the collection's shared matches."
+      ? "Finish your ratings to see the list's shared matches."
+      : noMutualMatches
+        ? "Everyone has finished rating, but no movie was liked by every member."
       : "Add movies and rate them together before starting Movie Night.";
 
   useEffect(() => {
@@ -93,13 +99,6 @@ export function ReadinessSheet({
             </p>
 
             <div className="mt-7 flex flex-col gap-3">
-              <button
-                type="button"
-                onClick={onContinue}
-                className="btn-primary w-full"
-              >
-                Continue Anyway
-              </button>
               {needsMyRatings && (
                 <button
                   type="button"
@@ -114,7 +113,7 @@ export function ReadinessSheet({
                 onClick={onDismiss}
                 className="btn-ghost w-full"
               >
-                Dismiss
+                Choose Another Mood
               </button>
             </div>
           </motion.div>

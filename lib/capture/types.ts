@@ -60,6 +60,7 @@ export interface CaptureSession {
   collectionIds: string[];
   importedAt: string;
   savedAt?: string;
+  savedByUserId?: string;
   recommendationMetadata?: RecommendationMetadata;
 }
 

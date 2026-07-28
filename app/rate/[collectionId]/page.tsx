@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { PageShell } from "@/components/page-shell";
-import { RateSession } from "@/components/rate/rate-session";
+import { RateSessionResolver } from "@/components/rate/rate-session-resolver";
 import { collectionService } from "@/lib/services/collection-service";
 import { movieService } from "@/lib/services/movie-service";
 
@@ -17,15 +17,17 @@ export default async function RatePage({ params }: RatePageProps) {
 
   const collection = collectionService.getById(collectionId);
 
-  if (!collection) {
-    notFound();
-  }
-
-  const items = movieService.getCollectionMovies(collection.items);
+  const items = collection
+    ? movieService.getCollectionMovies(collection.items)
+    : [];
 
   return (
     <PageShell top>
-      <RateSession collection={collection} items={items} />
+      <RateSessionResolver
+        collectionId={collectionId}
+        seedCollection={collection ?? null}
+        seedItems={items}
+      />
     </PageShell>
   );
 }

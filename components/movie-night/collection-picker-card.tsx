@@ -1,86 +1,42 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { PosterImage } from "@/components/ui/poster-image";
 import { MOTION } from "@/lib/motion";
 import type { Collection } from "@/lib/types";
-import type {
-  CollectionReadinessState,
-  CollectionStats,
-} from "@/store/collection-stats-selector";
+import type { CollectionStats } from "@/store/collection-stats-selector";
 
 type CollectionPickerCardProps = {
   collection: Collection;
   movieCount: number;
+  posterUrls: string[];
   stats: CollectionStats;
   onSelect: () => void;
 };
 
-function CompletionRing({ percent }: { percent: number }) {
-  const size = 44;
-  const stroke = 3.5;
-  const radius = (size - stroke) / 2;
-  const circumference = 2 * Math.PI * radius;
-  const offset = circumference - (percent / 100) * circumference;
-
-  return (
-    <div
-      className="relative shrink-0"
-      style={{ width: size, height: size }}
-      aria-label={`${percent}% complete`}
-    >
-      <svg width={size} height={size} className="-rotate-90">
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="rgba(255,255,255,0.08)"
-          strokeWidth={stroke}
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={radius}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth={stroke}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className="text-netflix-red transition-[stroke-dashoffset] duration-300"
-        />
-      </svg>
-      <span className="absolute inset-0 flex items-center justify-center text-[0.625rem] font-semibold text-white">
-        {percent}%
-      </span>
-    </div>
-  );
-}
-
-function readinessStyles(level: CollectionReadinessState) {
-  if (level === "ready") {
-    return "bg-emerald-500/15 text-emerald-300";
+function readinessCopy(stats: CollectionStats): string {
+  if (stats.readinessState === "ready") return "🍿 Ready";
+  if (stats.readinessState === "waiting-for-you") {
+    return "⭐ Waiting for You";
   }
-  if (
-    level === "needs-my-ratings" ||
-    level === "waiting-for-partner"
-  ) {
-    return "bg-amber-500/15 text-amber-200";
+  if (stats.readinessState === "waiting-for-members") {
+    const name = stats.waitingMemberNames[0];
+    return name ? `⏳ Waiting for ${name}` : "⏳ Waiting for a member";
   }
-  return "bg-white/[0.05] text-netflix-muted";
+  if (stats.readinessState === "no-mutual-matches") {
+    return "🚫 No Matches Yet";
+  }
+  return "＋ Add Recommendations";
 }
 
 export function CollectionPickerCard({
   collection,
   movieCount,
+  posterUrls,
   stats,
   onSelect,
 }: CollectionPickerCardProps) {
   const movieLabel = movieCount === 1 ? "1 movie" : `${movieCount} movies`;
-  const matchLabel =
-    stats.mutualMatches === 1
-      ? "1 mutual match"
-      : `${stats.mutualMatches} mutual matches`;
 
   return (
     <motion.button
@@ -89,34 +45,51 @@ export function CollectionPickerCard({
       whileHover={{ y: -3 }}
       whileTap={{ scale: 0.99 }}
       transition={{ duration: MOTION.duration, ease: MOTION.ease }}
-      className="w-full rounded-2xl bg-netflix-surface p-5 text-left shadow-[var(--shadow-card)] transition-shadow duration-200 hover:shadow-[var(--shadow-elevated)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-netflix-red sm:p-6"
+      className="group relative min-h-64 w-full overflow-hidden rounded-3xl bg-netflix-surface text-left shadow-[var(--shadow-card)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-netflix-red"
     >
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex min-w-0 items-start gap-4">
-          <span
-            aria-hidden="true"
-            className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-white/[0.04] text-3xl sm:h-16 sm:w-16 sm:text-4xl"
-          >
-            {collection.emoji}
-          </span>
-          <div className="min-w-0 space-y-1.5 pt-0.5">
-            <h2 className="truncate text-xl font-semibold tracking-tight text-white sm:text-2xl">
+      {posterUrls.length > 0 && (
+        <div
+          aria-hidden="true"
+          className="absolute inset-0 grid grid-cols-3 opacity-80 transition duration-500 group-hover:scale-[1.025] group-hover:opacity-100 sm:grid-cols-6"
+        >
+          {posterUrls.slice(0, 9).map((posterUrl, index) => (
+            <div
+              key={`${posterUrl}-${index}`}
+              className="min-h-32 overflow-hidden"
+            >
+              <PosterImage src={posterUrl} alt="" />
+            </div>
+          ))}
+        </div>
+      )}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 bg-[linear-gradient(0deg,rgba(10,10,10,0.98)_0%,rgba(10,10,10,0.68)_48%,rgba(10,10,10,0.08)_100%)]"
+      />
+
+      <div className="relative z-10 flex min-h-64 flex-col justify-end p-6 sm:p-8">
+        <div className="flex items-end justify-between gap-5">
+          <div className="min-w-0">
+            <span aria-hidden="true" className="text-3xl">
+              {collection.emoji}
+            </span>
+            <h2 className="mt-2 truncate text-3xl font-semibold tracking-tight text-white sm:text-4xl">
               {collection.name}
             </h2>
-            <p className="text-sm text-netflix-muted">{movieLabel}</p>
-            <p className="text-sm font-medium text-rose-200/85">{matchLabel}</p>
+            <p className="mt-2 text-sm font-medium text-white/75">
+              <span className="capitalize">{movieLabel}</span>
+              <span aria-hidden="true"> · </span>
+              {readinessCopy(stats)}
+            </p>
           </div>
+          <span
+            aria-hidden="true"
+            className="mb-1 text-2xl text-white/60 transition group-hover:translate-x-1 group-hover:text-white"
+          >
+            →
+          </span>
         </div>
-
-        <CompletionRing percent={stats.completionPercent} />
       </div>
-
-      <p
-        className={`mt-5 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium ${readinessStyles(stats.readinessState)}`}
-      >
-        <span aria-hidden="true">{stats.readinessEmoji}</span>
-        {stats.readinessLabel}
-      </p>
     </motion.button>
   );
 }

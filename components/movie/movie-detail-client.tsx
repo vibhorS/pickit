@@ -14,6 +14,7 @@ import type {
   RecommendationSource,
   VoteValue,
 } from "@/lib/types";
+import { useCollaborationStore } from "@/store/collaboration-store";
 import { useVoteStore } from "@/store/vote-store";
 
 type MovieDetailClientProps = {
@@ -21,6 +22,7 @@ type MovieDetailClientProps = {
   movie: Movie;
   source: RecommendationSource;
   metadata?: RecommendationMetadata;
+  addedByUserId: string;
 };
 
 function formatRuntime(minutes: number): string {
@@ -37,9 +39,19 @@ export function MovieDetailClient({
   movie,
   source,
   metadata,
+  addedByUserId,
 }: MovieDetailClientProps) {
   const router = useRouter();
   const voteMovie = useVoteStore((state) => state.voteMovie);
+  const activeUserId = useCollaborationStore(
+    (state) => state.activeUserId,
+  );
+  const activeUser = useCollaborationStore((state) =>
+    state.users.find((user) => user.id === activeUserId),
+  );
+  const addedByUser = useCollaborationStore((state) =>
+    state.users.find((user) => user.id === addedByUserId),
+  );
 
   function handleVote(vote: VoteValue) {
     voteMovie(collection.id, movie.id, vote);
@@ -64,7 +76,10 @@ export function MovieDetailClient({
       <SwipeableVoteShell
         onVote={handleVote}
         footer={(vote) => (
-          <div className="flex flex-col gap-3 px-5 pb-5 sm:flex-row sm:px-8 sm:pb-7">
+          <div className="flex flex-col gap-3 px-5 pb-5 sm:flex-row sm:flex-wrap sm:px-8 sm:pb-7">
+            <p className="w-full text-center text-xs text-netflix-muted/70">
+              Rating as {activeUser?.name ?? "current user"}
+            </p>
             <button
               type="button"
               onClick={() => vote("pass")}
@@ -137,6 +152,12 @@ export function MovieDetailClient({
             source={source}
             variant="detail"
           />
+          <p className="text-xs text-netflix-muted/65">
+            Added to PickIt by{" "}
+            {addedByUserId === activeUserId
+              ? "you"
+              : addedByUser?.name ?? "a member"}
+          </p>
         </div>
       </SwipeableVoteShell>
     </FadeIn>

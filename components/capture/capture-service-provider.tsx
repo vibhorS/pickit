@@ -19,6 +19,7 @@ import type {
 } from "@/lib/capture/types";
 import type { RecommendationMetadata } from "@/lib/types";
 import { useCaptureStore } from "@/store/capture-store";
+import { useCollaborationStore } from "@/store/collaboration-store";
 import { useLocalCollectionStore } from "@/store/local-collection-store";
 
 type CaptureServiceContextValue = {
@@ -95,6 +96,8 @@ export function CaptureServiceProvider({
                 (candidate) => candidate.id,
               ),
               collectionIds: request.collectionIds,
+              savedByUserId:
+                useCollaborationStore.getState().activeUserId,
               recommendationMetadata:
                 request.recommendationMetadata,
               savedAt,

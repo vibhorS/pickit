@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Decision",
-  description: "Collect recommendations. Decide what to watch together.",
+  title: "PickIt",
+  description: "Stop scrolling. Start watching.",
 };
 
 export default function RootLayout({

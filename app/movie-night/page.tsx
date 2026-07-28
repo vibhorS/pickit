@@ -18,7 +18,7 @@ export default function MovieNightPage() {
   });
 
   return (
-    <PageShell top>
+    <PageShell top wide>
       <MovieNightFlow cards={cards} />
     </PageShell>
   );
