@@ -4,7 +4,7 @@ import Link from "next/link";
 import { ArrowRight, Camera, Popcorn } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { FadeIn } from "@/components/ui/fade-in";
 import { resolveCollectionCatalog } from "@/lib/collections/resolve-catalog";
 import { collectionService } from "@/lib/services/collection-service";
@@ -63,6 +63,33 @@ export function HomeClient() {
   const stats = useCollectionStatsList(
     recentCollections.map((entry) => entry.id),
   );
+  const byCollection = useLocalCollectionStore((state) => state.byCollection);
+
+  // TEMPORARY diagnostics — Home recent-collection card props (not CollectionCard).
+  useEffect(() => {
+    void import("@/lib/debug/boot-trace").then(({ bootTrace }) => {
+      bootTrace.recordUi({
+        stage: "Home recent collection card props",
+        rows: recentCollections.map((collection, index) => {
+          const items = byCollection[collection.id] ?? [];
+          const stat = stats[index];
+          const movieCount = stat?.totalMovies ?? 0;
+          return {
+            "Collection ID": collection.id,
+            "Collection name": collection.name,
+            "byCollection movie IDs": items.map((item) => item.movie.id),
+            "byCollection titles": items.map((item) => item.movie.title),
+            "byCollection movie count": items.length,
+            "stats.totalMovies": stat?.totalMovies ?? null,
+            "stats.movieIds": stat?.movies.map((m) => m.id) ?? [],
+            "stats.titles": stat?.movies.map((m) => m.title) ?? [],
+            "rendered movieCount": movieCount,
+            "rendered label": `${movieCount} movies · ${stat?.mutualMatches ?? 0} mutual matches`,
+          };
+        }),
+      });
+    });
+  }, [byCollection, recentCollections, stats]);
 
   function enterPickMode() {
     if (enteringPickMode) return;

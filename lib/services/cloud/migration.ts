@@ -378,6 +378,10 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     operation: "READ",
     detail: `lists=${lists.length} crewId=${crewId ?? "null"} ids=${JSON.stringify(lists.map((l) => l.id))}`,
     byCollection: {},
+    catalogIds: lists.map((l) => l.id),
+    collectionNames: Object.fromEntries(
+      lists.map((list) => [list.id, list.name]),
+    ),
   });
 
   const listIds = lists.map((list) => list.id);
@@ -391,6 +395,7 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     operation: "READ",
     detail: `recommendations=${recommendations.length} ratings=${ratings.length}`,
     byCollection: {},
+    catalogIds: listIds,
     recommendationMeta: recommendations.map((item) => ({
       id: item.id,
       listId: item.listId,
@@ -419,6 +424,7 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     operation: "READ",
     detail: `requested=${movieIds.length} resolved=${movies.length} missing=[${missingMovieIds.join(", ")}]`,
     byCollection: {},
+    catalogIds: listIds,
   });
 
   const byCollection: Record<
@@ -491,6 +497,10 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     operation: "SNAPSHOT",
     detail: `included=${recommendations.length - skipped.length} skipped=${skipped.length} skipDetail=${JSON.stringify(skipped)}`,
     byCollection,
+    catalogIds: listIds,
+    collectionNames: Object.fromEntries(
+      lists.map((list) => [list.id, list.name]),
+    ),
     recommendationMeta,
   });
 

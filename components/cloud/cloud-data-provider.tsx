@@ -24,6 +24,53 @@ import { useSettingsStore } from "@/store/settings-store";
 import type { Collection } from "@/lib/types";
 import type { CollectionMovie } from "@/lib/services/movie-service";
 
+function catalogIdsFromStore(extraIds: string[] = []): string[] {
+  const local = useLocalCollectionStore.getState();
+  return Array.from(
+    new Set([
+      ...extraIds,
+      ...local.createdCollections.map((c) => c.id),
+      ...Object.keys(local.byCollection),
+    ]),
+  );
+}
+
+function collectionNamesFromStore(
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  const local = useLocalCollectionStore.getState();
+  const names: Record<string, string> = { ...extra };
+  for (const collection of local.createdCollections) {
+    names[collection.id] = collection.name;
+  }
+  return names;
+}
+
+function recordByCollection(
+  stage: string,
+  operation: Parameters<typeof bootTrace.record>[0]["operation"],
+  byCollection: Record<
+    string,
+    | CollectionMovie[]
+    | Array<{
+        movie?: { id?: string; title?: string } | null;
+        recommendationId?: string | null;
+      }>
+  >,
+  detail?: string | null,
+  extraCatalogIds: string[] = [],
+  extraNames: Record<string, string> = {},
+) {
+  bootTrace.record({
+    stage,
+    operation,
+    detail,
+    byCollection,
+    catalogIds: catalogIdsFromStore(extraCatalogIds),
+    collectionNames: collectionNamesFromStore(extraNames),
+  });
+}
+
 /**
  * Boots cloud sync, migrates local data once, hydrates Crew-scoped stores,
  * and subscribes to realtime invalidation.
@@ -56,31 +103,31 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
 
     async function boot() {
       bootTrace.beginBoot();
-      bootTrace.record({
-        stage: "App start / CloudDataProvider.boot() entered",
-        operation: "READ",
-        detail: `userId=${profile!.id}`,
-        byCollection: useLocalCollectionStore.getState().byCollection,
-      });
+      recordByCollection(
+        "App start / CloudDataProvider.boot() entered",
+        "READ",
+        useLocalCollectionStore.getState().byCollection,
+        `userId=${profile!.id}`,
+      );
 
       try {
         const migrateResult = await migrateLocalDataToSupabase(profile!.id);
         if (cancelled) return;
-        bootTrace.record({
-          stage: "migrateLocalDataToSupabase() returned",
-          operation: "MIGRATE",
-          detail: JSON.stringify(migrateResult),
-          byCollection: useLocalCollectionStore.getState().byCollection,
-        });
+        recordByCollection(
+          "migrateLocalDataToSupabase() returned",
+          "MIGRATE",
+          useLocalCollectionStore.getState().byCollection,
+          JSON.stringify(migrateResult),
+        );
 
         await crewService.ensureCrew(profile!);
         if (cancelled) return;
-        bootTrace.record({
-          stage: "crewService.ensureCrew() returned",
-          operation: "READ",
-          detail: null,
-          byCollection: useLocalCollectionStore.getState().byCollection,
-        });
+        recordByCollection(
+          "crewService.ensureCrew() returned",
+          "READ",
+          useLocalCollectionStore.getState().byCollection,
+          null,
+        );
 
         const [snapshot, crewSnapshot] = await Promise.all([
           loadCloudSnapshot(profile!.id),
@@ -88,35 +135,47 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
         ]);
         if (cancelled) return;
 
-        bootTrace.record({
-          stage: "loadCloudSnapshot() returned → pre-merge local byCollection",
-          operation: "READ",
-          detail: `snapshotKeys=${JSON.stringify(Object.keys(snapshot.byCollection))} localKeys=${JSON.stringify(Object.keys(useLocalCollectionStore.getState().byCollection))} skipped=${JSON.stringify(snapshot.__bootTrace?.skipped ?? [])}`,
-          byCollection: useLocalCollectionStore.getState().byCollection,
-        });
+        const snapshotListIds = snapshot.lists.map((list) => list.id);
+        const snapshotNames = Object.fromEntries(
+          snapshot.lists.map((list) => [list.id, list.name]),
+        );
 
-        bootTrace.record({
-          stage: "loadCloudSnapshot() snapshot.byCollection (cloud payload)",
-          operation: "SNAPSHOT",
-          detail: `recsInSnapshot=${Object.values(snapshot.byCollection).flat().length}`,
-          byCollection: snapshot.byCollection,
-        });
+        recordByCollection(
+          "loadCloudSnapshot() returned → pre-merge local byCollection",
+          "READ",
+          useLocalCollectionStore.getState().byCollection,
+          `snapshotKeys=${JSON.stringify(Object.keys(snapshot.byCollection))} localKeys=${JSON.stringify(Object.keys(useLocalCollectionStore.getState().byCollection))} skipped=${JSON.stringify(snapshot.__bootTrace?.skipped ?? [])}`,
+          snapshotListIds,
+          snapshotNames,
+        );
+
+        recordByCollection(
+          "loadCloudSnapshot() snapshot.byCollection (cloud payload)",
+          "SNAPSHOT",
+          snapshot.byCollection,
+          `recsInSnapshot=${Object.values(snapshot.byCollection).flat().length}`,
+          snapshotListIds,
+          snapshotNames,
+        );
 
         mergeCloudSnapshot(profile!.id, snapshot);
-        bootTrace.record({
-          stage: "mergeCloudSnapshot() / applyCloudSnapshot applied",
-          operation: "MERGE",
-          detail: "cloud wins; local-only movie ids preserved",
-          byCollection: useLocalCollectionStore.getState().byCollection,
-        });
+        recordByCollection(
+          "mergeCloudSnapshot() / applyCloudSnapshot applied",
+          "MERGE",
+          useLocalCollectionStore.getState().byCollection,
+          "cloud wins; local-only movie ids preserved",
+          snapshotListIds,
+          snapshotNames,
+        );
 
         useCrewStore.getState().setSnapshot(crewSnapshot);
-        bootTrace.record({
-          stage: "after crew/setSnapshot",
-          operation: "READ",
-          detail: `crewId=${crewSnapshot?.crew.id ?? "null"}`,
-          byCollection: useLocalCollectionStore.getState().byCollection,
-        });
+        recordByCollection(
+          "after crew/setSnapshot",
+          "READ",
+          useLocalCollectionStore.getState().byCollection,
+          `crewId=${crewSnapshot?.crew.id ?? "null"}`,
+          snapshotListIds,
+        );
 
         if (crewSnapshot) {
           void crewService.setPresence(
@@ -142,12 +201,13 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
           });
         }
 
-        bootTrace.record({
-          stage: "after preferences + before realtime subscribe",
-          operation: "READ",
-          detail: null,
-          byCollection: useLocalCollectionStore.getState().byCollection,
-        });
+        recordByCollection(
+          "after preferences + before realtime subscribe",
+          "READ",
+          useLocalCollectionStore.getState().byCollection,
+          null,
+          snapshotListIds,
+        );
 
         void queryClient.invalidateQueries({
           queryKey: queryKeys.lists(profile!.id),
@@ -223,23 +283,24 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
           detail: `${snapshot.lists.length} lists, ${Object.values(snapshot.byCollection).flat().length} recs`,
         });
 
-        bootTrace.record({
-          stage: "boot complete (Home-ready)",
-          operation: "READ",
-          detail: "end of CloudDataProvider.boot()",
-          byCollection: useLocalCollectionStore.getState().byCollection,
-        });
+        recordByCollection(
+          "boot complete (Home-ready)",
+          "READ",
+          useLocalCollectionStore.getState().byCollection,
+          "end of CloudDataProvider.boot()",
+          snapshotListIds,
+        );
 
         const unsubByCollection = useLocalCollectionStore.subscribe(
           (state, prev) => {
             if (state.byCollection === prev.byCollection) return;
-            bootTrace.record({
-              stage: "POST-BOOT byCollection mutation",
-              operation: "REPLACE",
-              detail:
-                "Zustand setState changed byCollection after boot complete",
-              byCollection: state.byCollection,
-            });
+            recordByCollection(
+              "POST-BOOT byCollection mutation",
+              "REPLACE",
+              state.byCollection,
+              "Zustand setState changed byCollection after boot complete",
+              snapshotListIds,
+            );
           },
         );
         unsubs.push(unsubByCollection);
@@ -249,12 +310,12 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
           crewId: crewId ?? undefined,
         });
       } catch (error) {
-        bootTrace.record({
-          stage: "Cloud boot FAILED",
-          operation: "RESET",
-          detail: error instanceof Error ? error.message : "unknown",
-          byCollection: useLocalCollectionStore.getState().byCollection,
-        });
+        recordByCollection(
+          "Cloud boot FAILED",
+          "RESET",
+          useLocalCollectionStore.getState().byCollection,
+          error instanceof Error ? error.message : "unknown",
+        );
         logger.error("Cloud boot failed", {
           message: error instanceof Error ? error.message : "unknown",
         });
@@ -287,19 +348,27 @@ function mergeCloudSnapshot(userId: string, snapshot: CloudSnapshot) {
   const localCollections = localState.createdCollections;
   const localByCollection = localState.byCollection;
   const localCaptures = localState.captures;
+  const snapshotListIds = snapshot.lists.map((list) => list.id);
+  const snapshotNames = Object.fromEntries(
+    snapshot.lists.map((list) => [list.id, list.name]),
+  );
 
-  bootTrace.record({
-    stage: "mergeCloudSnapshot: BEFORE (local)",
-    operation: "READ",
-    detail: `localKeys=${JSON.stringify(Object.keys(localByCollection))}`,
-    byCollection: localByCollection,
-  });
-  bootTrace.record({
-    stage: "mergeCloudSnapshot: BEFORE (cloud snapshot)",
-    operation: "SNAPSHOT",
-    detail: `cloudKeys=${JSON.stringify(Object.keys(snapshot.byCollection))}`,
-    byCollection: snapshot.byCollection,
-  });
+  recordByCollection(
+    "mergeCloudSnapshot: BEFORE (local)",
+    "READ",
+    localByCollection,
+    `localKeys=${JSON.stringify(Object.keys(localByCollection))}`,
+    snapshotListIds,
+    snapshotNames,
+  );
+  recordByCollection(
+    "mergeCloudSnapshot: BEFORE (cloud snapshot)",
+    "SNAPSHOT",
+    snapshot.byCollection,
+    `cloudKeys=${JSON.stringify(Object.keys(snapshot.byCollection))}`,
+    snapshotListIds,
+    snapshotNames,
+  );
 
   useVoteStore.getState().mergeVotes(snapshot.votes);
 
@@ -353,12 +422,14 @@ function mergeCloudSnapshot(userId: string, snapshot: CloudSnapshot) {
     }
   }
 
-  bootTrace.record({
-    stage: "mergeCloudSnapshot: computed mergedByCollection (pre-setState)",
-    operation: "MERGE",
-    detail: "about to REPLACE store.byCollection with mergedByCollection",
-    byCollection: mergedByCollection,
-  });
+  recordByCollection(
+    "mergeCloudSnapshot: computed mergedByCollection (pre-setState)",
+    "MERGE",
+    mergedByCollection,
+    "about to REPLACE store.byCollection with mergedByCollection",
+    snapshotListIds,
+    snapshotNames,
+  );
 
   useLocalCollectionStore.setState({
     createdCollections: mergedCollections,
@@ -366,12 +437,14 @@ function mergeCloudSnapshot(userId: string, snapshot: CloudSnapshot) {
     captures: localCaptures,
   });
 
-  bootTrace.record({
-    stage: "mergeCloudSnapshot: AFTER setState",
-    operation: "REPLACE",
-    detail: "Zustand byCollection replaced with merged result",
-    byCollection: useLocalCollectionStore.getState().byCollection,
-  });
+  recordByCollection(
+    "mergeCloudSnapshot: AFTER setState",
+    "REPLACE",
+    useLocalCollectionStore.getState().byCollection,
+    "Zustand byCollection replaced with merged result",
+    snapshotListIds,
+    snapshotNames,
+  );
 
   const asUsers = snapshot.memberProfiles.map((profile) => ({
     id: profile.id,
@@ -411,12 +484,13 @@ function mergeCloudSnapshot(userId: string, snapshot: CloudSnapshot) {
     };
   });
 
-  bootTrace.record({
-    stage: "after collaboration setState (memberships)",
-    operation: "READ",
-    detail: `memberships=${useCollaborationStore.getState().memberships.length}`,
-    byCollection: useLocalCollectionStore.getState().byCollection,
-  });
+  recordByCollection(
+    "after collaboration setState (memberships)",
+    "READ",
+    useLocalCollectionStore.getState().byCollection,
+    `memberships=${useCollaborationStore.getState().memberships.length}`,
+    snapshotListIds,
+  );
 
   const profile = useAuthStore.getState().profile;
   if (profile) {
@@ -428,13 +502,13 @@ function mergeCloudSnapshot(userId: string, snapshot: CloudSnapshot) {
       color: profile.color,
       partnerUserId: useAuthStore.getState().partner.partner?.id ?? null,
     });
-    bootTrace.record({
-      stage: "after adoptCanonicalIdentity",
-      operation: "READ",
-      detail:
-        "identity remap / seed memberships — should not touch byCollection",
-      byCollection: useLocalCollectionStore.getState().byCollection,
-    });
+    recordByCollection(
+      "after adoptCanonicalIdentity",
+      "READ",
+      useLocalCollectionStore.getState().byCollection,
+      "identity remap / seed memberships — should not touch byCollection",
+      snapshotListIds,
+    );
   }
 }
 
@@ -442,22 +516,28 @@ async function refreshFromCloud(
   userId: string,
   queryClient?: ReturnType<typeof useQueryClient>,
 ) {
-  bootTrace.record({
-    stage: "refreshFromCloud() ENTERED",
-    operation: "SUBSCRIBE",
-    detail: "realtime or invalidate triggered second hydrate",
-    byCollection: useLocalCollectionStore.getState().byCollection,
-  });
+  recordByCollection(
+    "refreshFromCloud() ENTERED",
+    "SUBSCRIBE",
+    useLocalCollectionStore.getState().byCollection,
+    "realtime or invalidate triggered second hydrate",
+  );
   const [snapshot, crewSnapshot] = await Promise.all([
     loadCloudSnapshot(userId),
     crewService.getSnapshot(userId),
   ]);
-  bootTrace.record({
-    stage: "refreshFromCloud: snapshot loaded",
-    operation: "SNAPSHOT",
-    detail: null,
-    byCollection: snapshot.byCollection,
-  });
+  const snapshotListIds = snapshot.lists.map((list) => list.id);
+  const snapshotNames = Object.fromEntries(
+    snapshot.lists.map((list) => [list.id, list.name]),
+  );
+  recordByCollection(
+    "refreshFromCloud: snapshot loaded",
+    "SNAPSHOT",
+    snapshot.byCollection,
+    null,
+    snapshotListIds,
+    snapshotNames,
+  );
   mergeCloudSnapshot(userId, snapshot);
   useCrewStore.getState().setSnapshot(crewSnapshot);
   if (crewSnapshot) {
@@ -466,11 +546,13 @@ async function refreshFromCloud(
     );
     useCrewStore.getState().setPresence(presence);
   }
-  bootTrace.record({
-    stage: "refreshFromCloud() DONE",
-    operation: "MERGE",
-    detail: "second apply of cloud snapshot",
-    byCollection: useLocalCollectionStore.getState().byCollection,
-  });
+  recordByCollection(
+    "refreshFromCloud() DONE",
+    "MERGE",
+    useLocalCollectionStore.getState().byCollection,
+    "second apply of cloud snapshot",
+    snapshotListIds,
+    snapshotNames,
+  );
   void queryClient;
 }

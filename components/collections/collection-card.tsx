@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { useEffect } from "react";
 import type { Collection } from "@/lib/types";
 import { getCollectionSharingState } from "@/lib/collaboration";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +50,43 @@ export function CollectionCard({ collection }: CollectionCardProps) {
       : sharingState === "invitation-pending"
         ? "warning"
         : "neutral";
+
+  // TEMPORARY diagnostics — exact CollectionCard props / derived values.
+  useEffect(() => {
+    void import("@/lib/debug/boot-trace").then(({ bootTrace }) => {
+      bootTrace.recordUi({
+        stage: `CollectionCard props [${collection.id}]`,
+        rows: [
+          {
+            "Collection ID": collection.id,
+            "Collection name": collection.name,
+            "collection.items.length (metadata)": collection.items.length,
+            "byCollection movie IDs": localItems.map((item) => item.movie.id),
+            "byCollection titles": localItems.map((item) => item.movie.title),
+            "byCollection movie count": localItems.length,
+            "stats.totalMovies": stats.totalMovies,
+            "stats.movieIds": stats.movies.map((m) => m.id),
+            "stats.titles": stats.movies.map((m) => m.title),
+            movieCount,
+            movieLabel,
+            "posterUrls count": posterUrls.length,
+            sharingLabel,
+          },
+        ],
+      });
+    });
+  }, [
+    collection.id,
+    collection.items.length,
+    collection.name,
+    localItems,
+    movieCount,
+    movieLabel,
+    posterUrls.length,
+    sharingLabel,
+    stats.movies,
+    stats.totalMovies,
+  ]);
 
   return (
     <Link

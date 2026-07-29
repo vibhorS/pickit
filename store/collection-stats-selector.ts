@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { collectionService } from "@/lib/services/collection-service";
 import {
   movieService,
@@ -307,7 +307,7 @@ export function useCollectionStatsList(
   );
   const collectionKey = collectionIds.join("\u001f");
 
-  return useMemo(
+  const stats = useMemo(
     () =>
       collectionKey
         .split("\u001f")
@@ -336,4 +336,35 @@ export function useCollectionStatsList(
       votes,
     ],
   );
+
+  // TEMPORARY diagnostics — full structured dump for runtime comparison.
+  useEffect(() => {
+    if (collectionIds.length === 0) return;
+    void import("@/lib/debug/boot-trace").then(({ bootTrace }) => {
+      const nameById = Object.fromEntries(
+        (createdCollections ?? []).map((c) => [c.id, c.name]),
+      );
+      bootTrace.recordUi({
+        stage: "useCollectionStatsList() INPUT+OUTPUT",
+        detail: `collectionIds=${JSON.stringify(collectionIds)}`,
+        rows: collectionIds.map((collectionId, index) => {
+          const items = byCollection[collectionId] ?? [];
+          const stat = stats[index];
+          return {
+            "Collection ID": collectionId,
+            "Collection name": nameById[collectionId] ?? "(name unknown)",
+            "byCollection movie IDs": items.map((item) => item.movie.id),
+            "byCollection titles": items.map((item) => item.movie.title),
+            "byCollection movie count": items.length,
+            "stats.totalMovies": stat?.totalMovies ?? null,
+            "stats.movieIds": stat?.movies.map((m) => m.id) ?? [],
+            "stats.titles": stat?.movies.map((m) => m.title) ?? [],
+            "stats.mutualMatches": stat?.mutualMatches ?? null,
+          };
+        }),
+      });
+    });
+  }, [byCollection, collectionIds, createdCollections, stats]);
+
+  return stats;
 }

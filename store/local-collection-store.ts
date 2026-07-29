@@ -1082,6 +1082,10 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                 ? `rehydrate error: ${String(error)}`
                 : `persisted keys=${JSON.stringify(Object.keys(state?.byCollection ?? {}))}`,
               byCollection: state?.byCollection ?? {},
+              catalogIds: [
+                ...(state?.createdCollections?.map((c) => c.id) ?? []),
+                ...Object.keys(state?.byCollection ?? {}),
+              ],
             });
           });
         };
