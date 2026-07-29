@@ -24,6 +24,7 @@ type VoteStore = {
   ) => MovieVote | undefined;
   clearVotes: (userId?: string) => void;
   replaceVotes: (votes: MovieVote[]) => void;
+  mergeVotes: (cloudVotes: MovieVote[]) => void;
 };
 
 function reviveVotes(votes: MovieVote[]): MovieVote[] {
@@ -239,6 +240,25 @@ export const useVoteStore = create<VoteStore>()(
       },
       replaceVotes: (votes) =>
         set({ votes: reviveVotes(votes) }),
+      mergeVotes: (cloudVotes: MovieVote[]) => {
+        set((state) => {
+          const byKey = new Map<string, MovieVote>();
+          for (const vote of state.votes) {
+            byKey.set(
+              `${vote.collectionId}\u001f${vote.movieId}\u001f${vote.userId}`,
+              vote,
+            );
+          }
+          for (const vote of reviveVotes(cloudVotes)) {
+            const key = `${vote.collectionId}\u001f${vote.movieId}\u001f${vote.userId}`;
+            const existing = byKey.get(key);
+            if (!existing || new Date(vote.votedAt).getTime() >= new Date(existing.votedAt).getTime()) {
+              byKey.set(key, vote);
+            }
+          }
+          return { votes: [...byKey.values()] };
+        });
+      },
     }),
     {
       name: "decision-votes",

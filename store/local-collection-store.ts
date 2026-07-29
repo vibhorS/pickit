@@ -12,6 +12,7 @@ import type {
 import { DEFAULT_OWNER } from "@/lib/users";
 import { useCollaborationStore } from "@/store/collaboration-store";
 import { useCrewStore } from "@/store/crew-store";
+import { useAuthStore } from "@/store/auth-store";
 
 /** Stable empty snapshot — never return a fresh [] from a Zustand selector. */
 export const EMPTY_LOCAL_ITEMS: CollectionMovie[] = [];
@@ -80,6 +81,14 @@ function newId(prefix: string): string {
     return `${prefix}-${crypto.randomUUID()}`;
   }
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function newUuid(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  // Fallback: strip any prefix so the value remains UUID-like.
+  return newId("tmp").replace(/^[a-z]+-/, "");
 }
 
 function canEditCollection(collectionId: string): boolean {
@@ -251,7 +260,7 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
           void import("@/lib/supabase/client").then(({ isSupabaseConfigured }) => {
             if (!isSupabaseConfigured()) return;
             const rec = {
-              id: newId("rec"),
+              id: newUuid(),
               listId: collectionId,
               movieId: movie.id,
               sourceType: source.type,
@@ -265,49 +274,43 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
               updatedAt: addedAt,
               deletedAt: null as string | null,
             };
-            void import("@/lib/repositories/cloud").then(
-              async ({ getCloudRepositories }) => {
-                const repos = getCloudRepositories();
-                await repos.movies.upsert(movie);
-                if (navigator.onLine) {
-                  await repos.recommendations.upsert(rec);
-                } else {
-                  const { cloudSyncEngine } = await import(
-                    "@/lib/sync/cloud-sync-engine"
+            // Always enqueue for durability, then attempt immediate write
+            void import("@/lib/sync/cloud-sync-engine").then(
+              async ({ cloudSyncEngine }) => {
+                await cloudSyncEngine.enqueue({
+                  entityType: "recommendation",
+                  entityId: rec.id,
+                  operation: "upsert",
+                  payload: rec,
+                });
+                // Movie upsert is fire-and-forget (catalog cache)
+                try {
+                  const { getCloudRepositories } = await import(
+                    "@/lib/repositories/cloud"
                   );
-                  await cloudSyncEngine.enqueue({
-                    entityType: "recommendation",
-                    entityId: rec.id,
-                    operation: "upsert",
-                    payload: rec,
-                  });
+                  await getCloudRepositories().movies.upsert(movie);
+                } catch {
+                  // Movie cache miss is non-fatal
                 }
-                const { useCrewStore } = await import("@/store/crew-store");
-                const crew = useCrewStore.getState().crew;
-                if (crew) {
-                  const { crewService } = await import(
-                    "@/lib/services/crew/crew-service"
-                  );
-                  await crewService.recordActivity({
-                    crewId: crew.id,
-                    userId: addedByUserId,
-                    type: "movie-added",
-                    listId: collectionId,
-                    movieId: movie.id,
-                    summary: `Added ${movie.title}`,
-                  });
-                  const others = useCrewStore
-                    .getState()
-                    .otherMembers(addedByUserId);
-                  for (const member of others) {
-                    await repos.crew.notify({
-                      userId: member.userId,
+                // Crew notifications
+                try {
+                  const { useCrewStore } = await import("@/store/crew-store");
+                  const crew = useCrewStore.getState().crew;
+                  if (crew) {
+                    const { crewService } = await import(
+                      "@/lib/services/crew/crew-service"
+                    );
+                    await crewService.recordActivity({
                       crewId: crew.id,
+                      userId: addedByUserId,
+                      type: "movie-added",
                       listId: collectionId,
-                      type: "recommendation-added",
-                      message: `${movie.title} was added to a shared list.`,
+                      movieId: movie.id,
+                      summary: `Added ${movie.title}`,
                     });
                   }
+                } catch {
+                  // Crew notification failure is non-fatal
                 }
               },
             );
@@ -395,31 +398,29 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
             updatedAt: now,
             deletedAt: null as string | null,
           };
-          void import("@/lib/repositories/cloud").then(
-            async ({ getCloudRepositories }) => {
-              const { cloudSyncEngine } = await import(
-                "@/lib/sync/cloud-sync-engine"
-              );
+          void import("@/lib/sync/cloud-sync-engine").then(
+            async ({ cloudSyncEngine }) => {
               await cloudSyncEngine.enqueue({
                 entityType: "collection",
                 entityId: list.id,
                 operation: "upsert",
                 payload: list,
               });
-              if (navigator.onLine) {
-                await getCloudRepositories().lists.upsert(list);
-              }
               if (crewId) {
-                const { crewService } = await import(
-                  "@/lib/services/crew/crew-service"
-                );
-                await crewService.recordActivity({
-                  crewId,
-                  userId: ownerId,
-                  type: "list-created",
-                  listId: collection.id,
-                  summary: `New list created: ${collection.name}`,
-                });
+                try {
+                  const { crewService } = await import(
+                    "@/lib/services/crew/crew-service"
+                  );
+                  await crewService.recordActivity({
+                    crewId,
+                    userId: ownerId,
+                    type: "list-created",
+                    listId: collection.id,
+                    summary: `New list created: ${collection.name}`,
+                  });
+                } catch {
+                  // Crew notification failure is non-fatal
+                }
               }
             },
           );

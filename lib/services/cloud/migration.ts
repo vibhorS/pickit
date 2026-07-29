@@ -3,7 +3,6 @@ import type {
   CloudList,
   CloudRecommendation,
 } from "@/lib/repositories/cloud/types";
-import { createId } from "@/lib/repositories/local";
 import { logger } from "@/lib/observability/logger";
 import type { Collection, CollectionItem, Movie, MovieVote } from "@/lib/types";
 
@@ -153,7 +152,7 @@ export async function migrateLocalDataToSupabase(userId: string): Promise<{
       if (!item.movieId) continue;
       if (override?.removedMovieIds?.includes(item.movieId)) continue;
       recommendations.push({
-        id: createId("rec"),
+        id: crypto.randomUUID(),
         listId: collection.id,
         movieId: item.movieId,
         sourceType: item.source.type,
@@ -197,7 +196,7 @@ export async function migrateLocalDataToSupabase(userId: string): Promise<{
       const movieId = movie?.id ?? entry.id;
       if (!movieId) continue;
       recommendations.push({
-        id: createId("rec"),
+        id: crypto.randomUUID(),
         listId: collectionId,
         movieId,
         sourceType: entry.source?.type ?? "search",

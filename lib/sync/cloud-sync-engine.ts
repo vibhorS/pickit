@@ -13,9 +13,16 @@ type SyncListener = (status: SyncStatus, pendingCount: number) => void;
 
 const RETRY_BASE_MS = 2000;
 const RETRY_MAX_MS = 60_000;
+const MAX_ATTEMPTS = 10;
+
+function getSyncStore() {
+  // Lazy import to avoid circular dependency at module init
+  return import("@/store/sync-store").then((m) => m.useSyncStore.getState());
+}
 
 /**
  * Cloud sync engine — optimistic local apply + background flush to Supabase.
+ * All writes are queued and retried. Failures are instrumented via SyncStore.
  */
 class CloudSyncEngine {
   private status: SyncStatus = "idle";
@@ -70,6 +77,13 @@ class CloudSyncEngine {
     partial: Omit<PendingOperation, "id" | "createdAt" | "attempts">,
   ): Promise<PendingOperation> {
     const operation = await offlineQueue.enqueue(partial);
+    void getSyncStore().then((s) => {
+      s.recordEvent({
+        type: "write_pending",
+        entity: partial.entityType,
+        entityId: partial.entityId,
+      });
+    });
     this.notify();
     if (this.online) this.scheduleFlush(50);
     return operation;
@@ -93,9 +107,34 @@ class CloudSyncEngine {
       try {
         await this.applyRemote(operation, repos);
         await offlineQueue.remove(operation.id);
+        void getSyncStore().then((s) => {
+          s.recordWriteSuccess(operation.entityType, operation.entityId);
+        });
       } catch (error) {
         const message = error instanceof Error ? error.message : "Sync failed";
         const attempts = operation.attempts + 1;
+
+        if (attempts >= MAX_ATTEMPTS) {
+          logger.error("Cloud sync permanently failed", {
+            entityType: operation.entityType,
+            entityId: operation.entityId,
+            message,
+            attempts,
+          });
+          await offlineQueue.remove(operation.id);
+          void getSyncStore().then((s) => {
+            s.recordWriteFailed(
+              operation.entityType,
+              operation.entityId,
+              `Gave up after ${attempts} attempts: ${message}`,
+            );
+          });
+          void import("@/store/auth-store").then(({ useAuthStore }) => {
+            useAuthStore.getState().setCloudSyncMeta("error", 0);
+          });
+          continue;
+        }
+
         const delay = Math.min(
           RETRY_BASE_MS * 2 ** Math.min(attempts, 5),
           RETRY_MAX_MS,
@@ -107,6 +146,9 @@ class CloudSyncEngine {
           nextRetryAt: new Date(Date.now() + delay).toISOString(),
         });
         logger.warn("Cloud sync retry scheduled", { message, attempts });
+        void getSyncStore().then((s) => {
+          s.recordWriteRetry(operation.entityType, operation.entityId);
+        });
         this.setStatus("error");
         this.scheduleFlush(delay);
         this.notify();
@@ -161,7 +203,6 @@ class CloudSyncEngine {
         break;
       }
       case "user": {
-        // profile updates go through auth repo directly
         break;
       }
       default: {
@@ -186,6 +227,10 @@ class CloudSyncEngine {
 
   private notify(): void {
     void offlineQueue.list().then((queue) => {
+      void getSyncStore().then((s) => {
+        s.setPendingWrites(queue.length);
+        s.setStatus(this.status);
+      });
       for (const listener of this.listeners) {
         listener(this.status, queue.length);
       }

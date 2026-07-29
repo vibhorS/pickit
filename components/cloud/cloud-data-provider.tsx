@@ -15,9 +15,12 @@ import { logger } from "@/lib/observability/logger";
 import { useAuthStore } from "@/store/auth-store";
 import { useCrewStore } from "@/store/crew-store";
 import { useLocalCollectionStore } from "@/store/local-collection-store";
+import { useSyncStore } from "@/store/sync-store";
 import { useVoteStore } from "@/store/vote-store";
 import { useCollaborationStore } from "@/store/collaboration-store";
 import { useSettingsStore } from "@/store/settings-store";
+import type { Collection } from "@/lib/types";
+import type { CollectionMovie } from "@/lib/services/movie-service";
 
 /**
  * Boots cloud sync, migrates local data once, hydrates Crew-scoped stores,
@@ -31,6 +34,7 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
+    useSyncStore.getState().setRepositoryMode("cloud");
     cloudSyncEngine.start();
     const unsub = cloudSyncEngine.subscribe((status, pendingOps) => {
       setSyncMeta?.(status, pendingOps);
@@ -62,7 +66,7 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
         ]);
         if (cancelled) return;
 
-        applyCloudSnapshot(profile!.id, snapshot);
+        mergeCloudSnapshot(profile!.id, snapshot);
         useCrewStore.getState().setSnapshot(crewSnapshot);
 
         if (crewSnapshot) {
@@ -94,16 +98,19 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
 
         const repos = getCloudRepositories();
         const crewId = snapshot.crewId;
+        useSyncStore.getState().setRealtimeConnected(true);
 
         if (crewId) {
           unsubs.push(
             repos.crew.subscribe(crewId, () => {
-              void refreshFromCloud(profile!.id);
+              useSyncStore.getState().recordRealtimeEvent("crew", crewId);
+              void refreshFromCloud(profile!.id, queryClient);
             }),
           );
           unsubs.push(
             repos.lists.subscribeCrew(crewId, () => {
-              void refreshFromCloud(profile!.id);
+              useSyncStore.getState().recordRealtimeEvent("lists", crewId);
+              void refreshFromCloud(profile!.id, queryClient);
               void queryClient.invalidateQueries({
                 queryKey: queryKeys.lists(profile!.id),
               });
@@ -112,7 +119,8 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
         } else {
           unsubs.push(
             repos.lists.subscribe(profile!.id, () => {
-              void refreshFromCloud(profile!.id);
+              useSyncStore.getState().recordRealtimeEvent("lists", profile!.id);
+              void refreshFromCloud(profile!.id, queryClient);
               void queryClient.invalidateQueries({
                 queryKey: queryKeys.lists(profile!.id),
               });
@@ -122,7 +130,8 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
 
         unsubs.push(
           repos.ratings.subscribe(profile!.id, () => {
-            void refreshFromCloud(profile!.id);
+            useSyncStore.getState().recordRealtimeEvent("ratings", profile!.id);
+            void refreshFromCloud(profile!.id, queryClient);
             void queryClient.invalidateQueries({
               queryKey: queryKeys.ratings(profile!.id),
             });
@@ -130,12 +139,20 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
         );
         unsubs.push(
           repos.recommendations.subscribe(profile!.id, () => {
-            void refreshFromCloud(profile!.id);
+            useSyncStore.getState().recordRealtimeEvent("recommendations", profile!.id);
+            void refreshFromCloud(profile!.id, queryClient);
             void queryClient.invalidateQueries({
               queryKey: queryKeys.recommendations(profile!.id),
             });
           }),
         );
+
+        useSyncStore.getState().recordEvent({
+          type: "snapshot_applied",
+          entity: "boot",
+          entityId: profile!.id,
+          detail: `${snapshot.lists.length} lists, ${Object.values(snapshot.byCollection).flat().length} recs`,
+        });
 
         logger.info("Cloud data hydrated", {
           userId: profile!.id,
@@ -152,6 +169,7 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
     void boot();
     return () => {
       cancelled = true;
+      useSyncStore.getState().setRealtimeConnected(false);
       for (const unsub of unsubs) unsub();
       if (profile) {
         void crewService.setPresence(profile.id, "offline");
@@ -162,15 +180,79 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
-function applyCloudSnapshot(
-  userId: string,
-  snapshot: Awaited<ReturnType<typeof loadCloudSnapshot>>,
-) {
-  useVoteStore.getState().replaceVotes(snapshot.votes);
+type CloudSnapshot = Awaited<ReturnType<typeof loadCloudSnapshot>>;
+
+/**
+ * Merge cloud snapshot into local state instead of replacing it.
+ * Cloud wins for collections and items; local-only items (pending sync) are preserved.
+ */
+function mergeCloudSnapshot(userId: string, snapshot: CloudSnapshot) {
+  useVoteStore.getState().mergeVotes(snapshot.votes);
+
+  const localState = useLocalCollectionStore.getState();
+  const localCollections = localState.createdCollections;
+  const localByCollection = localState.byCollection;
+  const localCaptures = localState.captures;
+
+  // Merge collections: cloud is authoritative, but keep local-only collections
+  // (those with pending sync queue items) until they sync.
+  const cloudCollectionIds = new Set(snapshot.lists.map((c) => c.id));
+  const mergedCollections: Collection[] = [...snapshot.lists];
+  for (const localCollection of localCollections) {
+    if (!cloudCollectionIds.has(localCollection.id)) {
+      mergedCollections.push(localCollection);
+    }
+  }
+
+  // Merge items per collection: cloud wins, local-only items preserved
+  const mergedByCollection: Record<string, CollectionMovie[]> = {};
+  const allCollectionIds = new Set([
+    ...Object.keys(localByCollection),
+    ...Object.keys(snapshot.byCollection),
+  ]);
+
+  for (const collectionId of allCollectionIds) {
+    const cloudItems = snapshot.byCollection[collectionId] ?? [];
+    const localItems = localByCollection[collectionId] ?? [];
+
+    const byMovieId = new Map<string, CollectionMovie>();
+    // Local first (so cloud overwrites)
+    for (const item of localItems) {
+      byMovieId.set(item.movie.id, item);
+    }
+    // Cloud overwrites with authoritative data
+    for (const item of cloudItems) {
+      const existing = byMovieId.get(item.movie.id);
+      if (existing) {
+        const localTime = existing.addedAt
+          ? new Date(existing.addedAt).getTime()
+          : 0;
+        const cloudTime = item.addedAt
+          ? new Date(item.addedAt).getTime()
+          : 0;
+        if (cloudTime >= localTime) {
+          byMovieId.set(item.movie.id, item);
+        } else {
+          useSyncStore.getState().recordMergeConflict(
+            "recommendation",
+            `${collectionId}:${item.movie.id}`,
+            "local newer than cloud — kept local",
+          );
+        }
+      } else {
+        byMovieId.set(item.movie.id, item);
+      }
+    }
+    const merged = Array.from(byMovieId.values());
+    if (merged.length > 0) {
+      mergedByCollection[collectionId] = merged;
+    }
+  }
+
   useLocalCollectionStore.setState({
-    createdCollections: snapshot.lists,
-    byCollection: snapshot.byCollection,
-    collectionOverrides: {},
+    createdCollections: mergedCollections,
+    byCollection: mergedByCollection,
+    captures: localCaptures,
   });
 
   const asUsers = snapshot.memberProfiles.map((profile) => ({
@@ -186,7 +268,6 @@ function applyCloudSnapshot(
     for (const user of asUsers) {
       byId.set(user.id, { ...byId.get(user.id), ...user });
     }
-    // Ensure current user is present even before crew profiles load
     if (!byId.has(userId) && asUsers.length === 0) {
       const active = useAuthStore.getState().profile;
       if (active) {
@@ -209,12 +290,15 @@ function applyCloudSnapshot(
   });
 }
 
-async function refreshFromCloud(userId: string) {
+async function refreshFromCloud(
+  userId: string,
+  queryClient?: ReturnType<typeof useQueryClient>,
+) {
   const [snapshot, crewSnapshot] = await Promise.all([
     loadCloudSnapshot(userId),
     crewService.getSnapshot(userId),
   ]);
-  applyCloudSnapshot(userId, snapshot);
+  mergeCloudSnapshot(userId, snapshot);
   useCrewStore.getState().setSnapshot(crewSnapshot);
   if (crewSnapshot) {
     const presence = await getCloudRepositories().crew.listPresence(

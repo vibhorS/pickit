@@ -10,16 +10,20 @@ export function isCloudConfigured(): boolean {
 
 /**
  * Repository factory.
- * When Supabase is configured, cloud repositories are the canonical datastore.
- * Local repositories remain only as a development fallback / offline helpers.
+ * When Supabase is configured, cloud is the canonical datastore.
+ * Local repositories are only used as a development fallback.
  */
 export function getRepositories(): Repositories {
-  if (isSupabaseConfigured()) {
-    // Legacy Repositories interface is still used by older services.
-    // New cloud code should import getCloudRepositories() directly.
+  if (!isSupabaseConfigured()) {
     return getLocalRepositories();
   }
   return getLocalRepositories();
+}
+
+export type RepositoryMode = "cloud" | "local";
+
+export function getActiveRepositoryMode(): RepositoryMode {
+  return isSupabaseConfigured() ? "cloud" : "local";
 }
 
 export { getCloudRepositories };

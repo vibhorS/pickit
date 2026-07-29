@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { CrewPanel } from "@/components/crew/crew-panel";
 import { PartnerPanel } from "@/components/partner/partner-panel";
 import { BetaDashboard } from "@/components/profile/beta-dashboard";
+import { SyncDashboard } from "@/components/profile/sync-dashboard";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -610,6 +611,7 @@ export function ProfileClient() {
                     </div>
                   </div>
                 )}
+                <SyncDashboard />
                 <BetaDashboard />
               </>
             )}
