@@ -15,6 +15,8 @@ export type AIServiceStatus = {
   configured: boolean;
   provider: AIProvider["id"];
   message: string;
+  /** Present when not configured — helps diagnose missing server env. */
+  missingEnv?: string[];
 };
 
 /**
@@ -34,11 +36,15 @@ export class AIService {
 
   status(): AIServiceStatus {
     if (!this.provider.isConfigured()) {
+      const missingEnv = !process.env.OPENAI_API_KEY?.trim()
+        ? ["OPENAI_API_KEY"]
+        : [];
       return {
         configured: false,
         provider: this.provider.id,
         message:
-          "AI is not configured. Set OPENAI_API_KEY in .env.local (server-only).",
+          "AI is not configured. Set OPENAI_API_KEY in .env.local (server-only), then restart `next dev`.",
+        missingEnv,
       };
     }
     return {
@@ -168,7 +174,19 @@ let singleton: AIService | null = null;
 export function getAIService(): AIService {
   if (!singleton) {
     singleton = new AIService(createAIProvider());
+    return singleton;
   }
+
+  // If the first boot happened before OPENAI_API_KEY was available (or was
+  // empty), recreate once the env provides a real key — without restarting
+  // the whole architecture (provider swap stays inside the factory).
+  if (!singleton.isConfigured()) {
+    const nextProvider = createAIProvider();
+    if (nextProvider.isConfigured()) {
+      singleton = new AIService(nextProvider);
+    }
+  }
+
   return singleton;
 }
 
