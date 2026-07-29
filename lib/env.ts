@@ -15,7 +15,10 @@ export type EnvConfig = {
   supabaseUrl: string | null;
   supabaseAnonKey: string | null;
   tmdbApiKey: string | null;
+  openaiApiKey: string | null;
+  aiProvider: string;
   isCloudConfigured: boolean;
+  isAIConfigured: boolean;
 };
 
 function trimOrNull(value: string | undefined): string | null {
@@ -32,14 +35,21 @@ export function getEnvConfig(): EnvConfig {
   const supabaseUrl = trimOrNull(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const supabaseAnonKey = trimOrNull(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   const tmdbApiKey = trimOrNull(process.env.TMDB_API_KEY);
+  // Server-only — never NEXT_PUBLIC_
+  const openaiApiKey = trimOrNull(process.env.OPENAI_API_KEY);
+  const aiProvider = trimOrNull(process.env.AI_PROVIDER) ?? "openai";
   const isCloudConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+  const isAIConfigured = Boolean(openaiApiKey);
 
   return {
     appEnv,
     supabaseUrl,
     supabaseAnonKey,
     tmdbApiKey,
+    openaiApiKey,
+    aiProvider,
     isCloudConfigured,
+    isAIConfigured,
   };
 }
 
