@@ -311,6 +311,7 @@ export async function loadCloudSnapshot(userId: string): Promise<{
       metadata?: Record<string, unknown>;
       addedByUserId: string;
       addedAt: string;
+      recommendationId?: string;
     }>
   >;
   crewId: string | null;
@@ -328,7 +329,21 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     role: "owner" | "member";
     joinedAt: string;
   }>;
+  /** TEMPORARY boot-trace metadata — not used by production UI. */
+  __bootTrace?: {
+    rawRecommendationCount: number;
+    skipped: Array<{
+      id: string;
+      listId: string;
+      movieId: string;
+      reason: string;
+    }>;
+    movieIdsRequested: string[];
+    movieIdsResolved: string[];
+  };
 }> {
+  const { bootTrace } = await import("@/lib/debug/boot-trace");
+
   const repos = getCloudRepositories();
   const crew = await repos.crew.getActiveCrewForUser(userId);
   const crewId = crew?.id ?? null;
@@ -358,11 +373,31 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     }
   }
 
+  bootTrace.record({
+    stage: "loadCloudSnapshot: lists fetched",
+    operation: "READ",
+    detail: `lists=${lists.length} crewId=${crewId ?? "null"} ids=${JSON.stringify(lists.map((l) => l.id))}`,
+    byCollection: {},
+  });
+
   const listIds = lists.map((list) => list.id);
   const [recommendations, ratings] = await Promise.all([
     repos.recommendations.listForListIds(listIds),
     repos.ratings.listForListIds(listIds),
   ]);
+
+  bootTrace.record({
+    stage: "loadCloudSnapshot: recommendations fetched",
+    operation: "READ",
+    detail: `recommendations=${recommendations.length} ratings=${ratings.length}`,
+    byCollection: {},
+    recommendationMeta: recommendations.map((item) => ({
+      id: item.id,
+      listId: item.listId,
+      movieId: item.movieId,
+      included: true,
+    })),
+  });
 
   const memberProfilesRaw = crewId
     ? await repos.crew.listMemberProfiles(crewId)
@@ -378,6 +413,14 @@ export async function loadCloudSnapshot(userId: string): Promise<{
   const movies = await repos.movies.getByIds(movieIds);
   const movieMap = new Map(movies.map((movie) => [movie.id, movie]));
 
+  const missingMovieIds = movieIds.filter((id) => !movieMap.has(id));
+  bootTrace.record({
+    stage: "loadCloudSnapshot: movies.getByIds",
+    operation: "READ",
+    detail: `requested=${movieIds.length} resolved=${movies.length} missing=[${missingMovieIds.join(", ")}]`,
+    byCollection: {},
+  });
+
   const byCollection: Record<
     string,
     Array<{
@@ -386,12 +429,43 @@ export async function loadCloudSnapshot(userId: string): Promise<{
       metadata?: Record<string, unknown>;
       addedByUserId: string;
       addedAt: string;
+      recommendationId?: string;
     }>
   > = {};
 
+  const skipped: Array<{
+    id: string;
+    listId: string;
+    movieId: string;
+    reason: string;
+  }> = [];
+  const recommendationMeta: Array<{
+    id: string;
+    listId: string;
+    movieId: string;
+    included: boolean;
+    skipReason?: string | null;
+  }> = [];
+
   for (const item of recommendations) {
     const movie = movieMap.get(item.movieId);
-    if (!movie) continue;
+    if (!movie) {
+      const reason = `movieMap miss for movieId=${item.movieId}`;
+      skipped.push({
+        id: item.id,
+        listId: item.listId,
+        movieId: item.movieId,
+        reason,
+      });
+      recommendationMeta.push({
+        id: item.id,
+        listId: item.listId,
+        movieId: item.movieId,
+        included: false,
+        skipReason: reason,
+      });
+      continue;
+    }
     if (!byCollection[item.listId]) byCollection[item.listId] = [];
     byCollection[item.listId].push({
       movie,
@@ -402,8 +476,23 @@ export async function loadCloudSnapshot(userId: string): Promise<{
       metadata: item.metadata,
       addedByUserId: item.addedByUserId,
       addedAt: item.createdAt,
+      recommendationId: item.id,
+    });
+    recommendationMeta.push({
+      id: item.id,
+      listId: item.listId,
+      movieId: item.movieId,
+      included: true,
     });
   }
+
+  bootTrace.record({
+    stage: "loadCloudSnapshot: byCollection built",
+    operation: "SNAPSHOT",
+    detail: `included=${recommendations.length - skipped.length} skipped=${skipped.length} skipDetail=${JSON.stringify(skipped)}`,
+    byCollection,
+    recommendationMeta,
+  });
 
   const collectionLists: Collection[] = lists.map((list) => ({
     id: list.id,
@@ -469,5 +558,11 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     crewId,
     memberProfiles,
     memberships,
+    __bootTrace: {
+      rawRecommendationCount: recommendations.length,
+      skipped,
+      movieIdsRequested: movieIds,
+      movieIdsResolved: movies.map((m) => m.id),
+    },
   };
 }

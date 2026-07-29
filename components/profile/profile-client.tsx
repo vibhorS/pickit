@@ -20,6 +20,7 @@ import { CrewPanel } from "@/components/crew/crew-panel";
 import { PartnerPanel } from "@/components/partner/partner-panel";
 import { SyncDashboard } from "@/components/profile/sync-dashboard";
 import { SavePathDebugPanel } from "@/components/profile/save-path-debug-panel";
+import { BootTracePanel } from "@/components/profile/boot-trace-panel";
 import { BetaDashboard } from "@/components/profile/beta-dashboard";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -310,6 +311,7 @@ export function ProfileClient() {
             </div>
 
             <div className="mt-10 space-y-6">
+              <BootTracePanel />
               <SavePathDebugPanel />
               <SyncDashboard />
             </div>

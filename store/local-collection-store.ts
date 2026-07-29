@@ -1072,6 +1072,20 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
         collectionOverrides: state.collectionOverrides,
         captures: state.captures,
       }),
+      onRehydrateStorage: () => {
+        return (state, error) => {
+          void import("@/lib/debug/boot-trace").then(({ bootTrace }) => {
+            bootTrace.record({
+              stage: "Zustand persist onRehydrateStorage (local-collections)",
+              operation: error ? "RESET" : "REPLACE",
+              detail: error
+                ? `rehydrate error: ${String(error)}`
+                : `persisted keys=${JSON.stringify(Object.keys(state?.byCollection ?? {}))}`,
+              byCollection: state?.byCollection ?? {},
+            });
+          });
+        };
+      },
       migrate: (persisted) => {
         const data = (persisted ?? {}) as Partial<LocalCollectionStore>;
         const byCollection = Object.fromEntries(
