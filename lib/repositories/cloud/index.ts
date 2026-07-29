@@ -724,11 +724,25 @@ function createRecommendationRepository(): RecommendationRepository {
       return this.listForListIds([listId]);
     },
     async upsert(item) {
+      console.error("CALLGRAPH ✓ CloudRecommendationRepository.upsert entered", {
+        file: "lib/repositories/cloud/index.ts",
+        id: item.id,
+      });
       const { assertStage } = await import("@/lib/sync/save-assertions");
       const {
         assertValidRecommendationId,
         traceRecommendation,
+        getRecommendationObjectId,
       } = await import("@/lib/sync/rec-id-trace");
+      const { savePathDebug } = await import("@/lib/debug/save-path-debug");
+      const objectId = getRecommendationObjectId(item);
+      const inheritedPath =
+        savePathDebug.snapshot().steps.at(-1)?.path ?? "other";
+      savePathDebug.mark("CloudRecommendationRepository.upsert", {
+        recommendationId: item.id,
+        objectId,
+        path: inheritedPath,
+      });
 
       traceRecommendation(item, "repository.upsert entered", {
         file: "lib/repositories/cloud/index.ts",
@@ -743,8 +757,35 @@ function createRecommendationRepository(): RecommendationRepository {
         `CloudRecommendationRepository.upsert entered for movie_id=${item.movieId} list_id=${item.listId} id=${item.id}`,
       );
 
+      const insertPayload = {
+        id: item.id,
+        list_id: item.listId,
+        movie_id: item.movieId,
+        source_type: item.sourceType ?? null,
+        source_label: item.sourceLabel ?? null,
+        metadata: item.metadata ?? {},
+        note: item.note ?? null,
+        added_by_user_id: item.addedByUserId,
+        created_by: item.createdBy,
+        updated_by: item.updatedBy,
+        created_at: item.createdAt,
+        updated_at: item.updatedAt,
+        deleted_at: item.deletedAt ?? null,
+      };
+      // Record intended payload even if assert throws before POST.
+      savePathDebug.setFinalPayload({ ...insertPayload });
+
       // Do NOT rewrite. Invalid IDs must fail loudly.
-      assertValidRecommendationId(item.id, "recommendations.upsert");
+      try {
+        assertValidRecommendationId(item.id, "recommendations.upsert");
+      } catch (err) {
+        savePathDebug.fail("assertValidRecommendationId", err, {
+          recommendationId: item.id,
+          objectId,
+          path: inheritedPath,
+        });
+        throw err;
+      }
 
       assertStage(
         5,
@@ -768,28 +809,17 @@ function createRecommendationRepository(): RecommendationRepository {
         `clientConstructor=${(supabase as { constructor?: { name?: string } }).constructor?.name ?? "unknown"}`,
       );
 
-      const insertPayload = {
-        id: item.id,
-        list_id: item.listId,
-        movie_id: item.movieId,
-        source_type: item.sourceType ?? null,
-        source_label: item.sourceLabel ?? null,
-        metadata: item.metadata ?? {},
-        note: item.note ?? null,
-        added_by_user_id: item.addedByUserId,
-        created_by: item.createdBy,
-        updated_by: item.updatedBy,
-        created_at: item.createdAt,
-        updated_at: item.updatedAt,
-        deleted_at: item.deletedAt ?? null,
-      };
-
       console.info("STAGE 7: Insert() called", {
         table: "recommendations",
         method: "upsert",
         onConflict: "list_id,movie_id",
         payload: insertPayload,
       });
+      console.error("CALLGRAPH ✓ Supabase POST payload", {
+        file: "lib/repositories/cloud/index.ts",
+        id: insertPayload.id,
+      });
+      savePathDebug.beginNetwork({ ...insertPayload });
       traceRecommendation(item, "Supabase payload about to send (same object id)", {
         file: "lib/repositories/cloud/index.ts",
         functionName: "recommendations.upsert",
@@ -807,6 +837,39 @@ function createRecommendationRepository(): RecommendationRepository {
         .upsert(insertPayload, { onConflict: "list_id,movie_id" })
         .select("*")
         .single();
+
+      const httpStatus =
+        error && typeof error === "object" && "status" in error
+          ? Number((error as { status?: unknown }).status)
+          : error
+            ? /invalid input syntax for type uuid/i.test(error.message)
+              ? 400
+              : null
+            : 200;
+
+      savePathDebug.setSupabaseResponse({
+        ok: !error && Boolean(data),
+        data: data ?? null,
+        error: error
+          ? {
+              message: error.message,
+              code: error.code ?? null,
+              details: error.details ?? null,
+              hint: error.hint ?? null,
+              status: httpStatus,
+            }
+          : null,
+        httpStatus,
+      });
+      if (!error && data && typeof (data as { id?: unknown }).id === "string") {
+        // Response stage already added by setSupabaseResponse; keep id identity mark.
+        savePathDebug.mark("mapRecommendation", {
+          recommendationId: (data as { id: string }).id,
+          objectId,
+          path: inheritedPath,
+          result: "ok",
+        });
+      }
 
       console.info("STAGE 8: Await insert returned", { data, error });
       assertStage(

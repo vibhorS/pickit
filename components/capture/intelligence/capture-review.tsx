@@ -26,6 +26,7 @@ import {
   assertStage,
   resetSaveAssertions,
 } from "@/lib/sync/save-assertions";
+import { savePathDebug } from "@/lib/debug/save-path-debug";
 import type {
   CaptureItem,
   MatchedRecommendation,
@@ -714,6 +715,11 @@ export function CaptureReview({
                   item.createCollectionNames.length === 0)
               }
               onClick={() => {
+                savePathDebug.clear();
+                savePathDebug.mark("Save button onClick");
+                console.error("CALLGRAPH ✓ Save button onClick", {
+                  file: "components/capture/intelligence/capture-review.tsx",
+                });
                 console.info("STAGE 1: Save button clicked");
                 void import("@/lib/sync/rec-id-trace").then(({ resetRecIdTrace }) => {
                   resetRecIdTrace();

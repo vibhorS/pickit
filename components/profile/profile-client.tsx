@@ -18,8 +18,9 @@ import {
 import { useEffect, useState } from "react";
 import { CrewPanel } from "@/components/crew/crew-panel";
 import { PartnerPanel } from "@/components/partner/partner-panel";
-import { BetaDashboard } from "@/components/profile/beta-dashboard";
 import { SyncDashboard } from "@/components/profile/sync-dashboard";
+import { SavePathDebugPanel } from "@/components/profile/save-path-debug-panel";
+import { BetaDashboard } from "@/components/profile/beta-dashboard";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -306,6 +307,11 @@ export function ProfileClient() {
                 <Trash2 className="mr-2 size-4" aria-hidden="true" />
                 Delete account
               </Button>
+            </div>
+
+            <div className="mt-10 space-y-6">
+              <SavePathDebugPanel />
+              <SyncDashboard />
             </div>
           </section>
         )}
@@ -611,7 +617,6 @@ export function ProfileClient() {
                     </div>
                   </div>
                 )}
-                <SyncDashboard />
                 <BetaDashboard />
               </>
             )}

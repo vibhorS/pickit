@@ -26,6 +26,7 @@ import type {
 import { fadeUp, MOTION } from "@/lib/motion";
 import { analytics } from "@/lib/observability/analytics";
 import { assertStage } from "@/lib/sync/save-assertions";
+import { savePathDebug } from "@/lib/debug/save-path-debug";
 import type { Collection } from "@/lib/types";
 import {
   filterInboxItems,
@@ -469,6 +470,10 @@ export function CaptureIntelligenceClient({
   };
 
   const onImport = () => {
+    savePathDebug.mark("onImport");
+    console.error("CALLGRAPH ✓ onImport entered", {
+      file: "components/capture/intelligence/capture-intelligence-client.tsx",
+    });
     console.info("STAGE 2: Save handler entered");
     try {
       assertStage(

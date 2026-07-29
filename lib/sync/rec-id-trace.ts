@@ -3,6 +3,8 @@
  * Follows ONE object instance from birth → Supabase payload.
  */
 
+import { savePathDebug } from "@/lib/debug/save-path-debug";
+
 export type RecIdTraceEvent = {
   phase: string;
   id: string;
@@ -64,6 +66,15 @@ export function tagRecommendationBirth<T extends { id: string }>(
     window.__PICKIT_REC_ID_BIRTH__ = { id: obj.id, objectId };
   }
 
+  // TEMPORARY — feeds Developer Mode Save Path Diagnosis panel
+  savePathDebug.setBirth(obj.id, objectId);
+  savePathDebug.mark("tagRecommendationBirth", {
+    recommendationId: obj.id,
+    objectId,
+    sameAsBirth: true,
+    path: "capture-save",
+  });
+
   push({
     phase: "BIRTH — first assignment of recommendation.id",
     id: obj.id,
@@ -91,6 +102,15 @@ export function traceRecommendation(
   const objectId =
     (obj as { [OBJECT_ID]?: string })[OBJECT_ID] ?? "UNTAGGED";
   const sameAsBirth = birthRef ? obj === birthRef : null;
+
+  // TEMPORARY — feeds Developer Mode Save Path Diagnosis panel
+  savePathDebug.mark(phase, {
+    recommendationId: obj.id,
+    objectId,
+    sameAsBirth,
+    path: savePathDebug.snapshot().steps.at(-1)?.path ?? "capture-save",
+  });
+
   push({
     phase,
     id: obj.id,
@@ -102,6 +122,14 @@ export function traceRecommendation(
     stack: new Error().stack ?? "",
     at: new Date().toISOString(),
   });
+}
+
+export function getRecommendationObjectId(
+  obj: object | null | undefined,
+): string | null {
+  if (!obj) return null;
+  const id = (obj as Record<symbol, string | undefined>)[OBJECT_ID];
+  return id ?? null;
 }
 
 export function assertValidRecommendationId(

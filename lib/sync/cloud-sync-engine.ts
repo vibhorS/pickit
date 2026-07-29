@@ -8,6 +8,7 @@ import { offlineQueue } from "@/lib/sync/offline-queue";
 import { logger } from "@/lib/observability/logger";
 import type { PendingOperation, SyncStatus } from "@/lib/types";
 import type { Movie } from "@/lib/types";
+import { savePathDebug } from "@/lib/debug/save-path-debug";
 
 type SyncListener = (status: SyncStatus, pendingCount: number) => void;
 
@@ -197,7 +198,28 @@ class CloudSyncEngine {
             await repos.movies.upsert(moviePayload);
           }
           await repos.recommendations.upsert(
-            payload as unknown as CloudRecommendation,
+            (() => {
+              const id = (payload as { id?: string }).id ?? null;
+              console.error(
+                "CALLGRAPH ✓ cloud-sync-engine applyRemote → recommendations.upsert",
+                {
+                  file: "lib/sync/cloud-sync-engine.ts",
+                  id,
+                },
+              );
+              if (!savePathDebug.snapshot().startedAt) {
+                savePathDebug.clear();
+              }
+              savePathDebug.mark("cloudSyncEngine.applyRemote", {
+                recommendationId: id,
+                path: "sync-engine",
+              });
+              savePathDebug.mark("repos.recommendations.upsert", {
+                recommendationId: id,
+                path: "sync-engine",
+              });
+              return payload as unknown as CloudRecommendation;
+            })(),
           );
         }
         break;

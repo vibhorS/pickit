@@ -1,0 +1,308 @@
+"use client";
+
+/**
+ * TEMPORARY — Developer Mode Save-path diagnosis panel.
+ * Remove with lib/debug/save-path-debug.ts after the bug is fixed.
+ */
+
+import { useMemo, useState } from "react";
+import {
+  buildSavePathSummary,
+  useSavePathDebugStore,
+  type SavePathStep,
+} from "@/lib/debug/save-path-debug";
+import { Surface } from "@/components/ui/surface";
+
+function truncateId(id: string | null): string {
+  if (!id) return "—";
+  if (id.length <= 12) return id;
+  return `${id.slice(0, 8)}…`;
+}
+
+function resultLabel(step: SavePathStep): string {
+  if (step.result === "ok") return "OK";
+  if (step.result === "fail") return "FAIL";
+  if (step.result === "pending") return "PENDING";
+  return "SKIP";
+}
+
+function resultClass(step: SavePathStep): string {
+  if (step.result === "ok") return "text-emerald-400";
+  if (step.result === "fail") return "text-red-400";
+  if (step.result === "pending") return "text-amber-300";
+  return "text-zinc-500";
+}
+
+function TimelineRow({ step }: { step: SavePathStep }) {
+  const [stackOpen, setStackOpen] = useState(false);
+  const isNetwork = step.network != null;
+
+  return (
+    <li className="border-b border-zinc-800 py-2 last:border-0">
+      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 text-xs">
+        <span className="font-mono text-[10px] text-zinc-500">
+          +{step.msSinceSave}ms
+        </span>
+        <span className="font-medium text-zinc-200">{step.name}</span>
+        <span className={resultClass(step)}>{resultLabel(step)}</span>
+        {step.durationMs != null ? (
+          <span className="text-[10px] text-zinc-500">
+            {step.durationMs}ms
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-0.5 font-mono text-[10px] text-zinc-500">
+        id={step.recommendationId ?? "—"} · object={step.objectId ?? "—"} ·
+        sameAsBirth=
+        {step.sameAsBirth === null
+          ? "—"
+          : step.sameAsBirth
+            ? "YES"
+            : "NO"}
+      </div>
+
+      {step.error ? (
+        <div className="mt-1 space-y-0.5 rounded bg-red-950/40 p-2 text-[10px]">
+          <p className="text-red-300">
+            <span className="text-zinc-500">Error type:</span> {step.error.type}
+          </p>
+          <p className="text-red-200">
+            <span className="text-zinc-500">Message:</span> {step.error.message}
+          </p>
+          {step.error.stack ? (
+            <div>
+              <button
+                type="button"
+                className="text-zinc-400 underline-offset-2 hover:underline"
+                onClick={() => setStackOpen((v) => !v)}
+              >
+                {stackOpen ? "Hide stack" : "Show stack"}
+              </button>
+              {stackOpen ? (
+                <pre className="mt-1 max-h-32 overflow-auto whitespace-pre-wrap text-zinc-500">
+                  {step.error.stack}
+                </pre>
+              ) : null}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
+      {isNetwork && step.network ? (
+        <div className="mt-1 space-y-1 rounded bg-black/40 p-2 text-[10px] text-zinc-400">
+          <p>
+            HTTP status:{" "}
+            <span className="text-zinc-200">
+              {step.network.httpStatus ?? "—"}
+            </span>
+            {" · "}
+            Request duration:{" "}
+            <span className="text-zinc-200">
+              {step.network.durationMs != null
+                ? `${step.network.durationMs}ms`
+                : "—"}
+            </span>
+          </p>
+          <details>
+            <summary className="cursor-pointer text-zinc-500">
+              Request payload
+            </summary>
+            <pre className="mt-1 max-h-28 overflow-auto text-zinc-300">
+              {JSON.stringify(step.network.requestPayload, null, 2)}
+            </pre>
+          </details>
+          <details>
+            <summary className="cursor-pointer text-zinc-500">
+              Response payload
+            </summary>
+            <pre className="mt-1 max-h-28 overflow-auto text-zinc-300">
+              {JSON.stringify(step.network.responsePayload, null, 2)}
+            </pre>
+          </details>
+        </div>
+      ) : null}
+    </li>
+  );
+}
+
+export function SavePathDebugPanel() {
+  const snap = useSavePathDebugStore();
+  const summary = useMemo(() => buildSavePathSummary(snap), [snap]);
+
+  return (
+    <div className="space-y-3">
+      <h3 className="text-sm font-semibold text-zinc-200">
+        Save Path Diagnosis
+      </h3>
+      <p className="text-[11px] text-zinc-500">
+        Clears automatically on each Save. Answers which path ran without
+        opening DevTools.
+      </p>
+
+      <Surface className="space-y-3 p-3">
+        {!snap.startedAt ? (
+          <p className="text-xs text-zinc-600">
+            Waiting for Save… Click Save recommendations to populate.
+          </p>
+        ) : (
+          <>
+            <div
+              className={`space-y-1 rounded-lg border p-3 text-xs ${
+                summary.rootFailure
+                  ? "border-red-500/40 bg-red-950/30"
+                  : summary.writeSucceeded
+                    ? "border-emerald-500/30 bg-emerald-950/20"
+                    : "border-zinc-700 bg-black/20"
+              }`}
+            >
+              <p className="font-medium text-zinc-300">Summary</p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono text-[11px]">
+                <dt className="text-zinc-500">Save Path:</dt>
+                <dd className="text-zinc-100">{summary.savePath}</dd>
+                <dt className="text-zinc-500">Why stopped:</dt>
+                <dd
+                  className={
+                    summary.stopReason
+                      ? "font-semibold text-red-300"
+                      : "text-emerald-400"
+                  }
+                >
+                  {summary.stopReason ?? "Did not stop before upsert"}
+                </dd>
+                <dt className="text-zinc-500">Root failure:</dt>
+                <dd
+                  className={
+                    summary.rootFailure
+                      ? "font-semibold text-red-300"
+                      : "text-emerald-400"
+                  }
+                >
+                  {summary.rootFailure ?? "NONE"}
+                </dd>
+                <dt className="text-zinc-500">Birth ID:</dt>
+                <dd className="text-zinc-100">
+                  {truncateId(summary.birthId)}
+                  {summary.birthId && summary.birthId.length > 12 ? (
+                    <span className="ml-1 text-zinc-600">
+                      ({summary.birthId})
+                    </span>
+                  ) : null}
+                </dd>
+                <dt className="text-zinc-500">ID changed:</dt>
+                <dd
+                  className={
+                    summary.idChanged ? "text-amber-300" : "text-emerald-400"
+                  }
+                >
+                  {summary.idChanged ? "YES" : "NO"}
+                </dd>
+                <dt className="text-zinc-500">Supabase called:</dt>
+                <dd className="text-zinc-100">
+                  {summary.supabaseCalled ? "YES" : "NO"}
+                </dd>
+                <dt className="text-zinc-500">Response:</dt>
+                <dd className="text-zinc-100">{summary.responseLabel}</dd>
+              </dl>
+              {snap.firstExit ? (
+                <div className="mt-2 space-y-0.5 border-t border-red-500/20 pt-2 font-mono text-[10px] text-red-200/90">
+                  <p>
+                    Exit kind: {snap.firstExit.kind} · {snap.firstExit.file}:
+                    {snap.firstExit.line} · {snap.firstExit.functionName}
+                  </p>
+                  {snap.firstExit.returnValue != null ? (
+                    <pre className="max-h-24 overflow-auto text-zinc-400">
+                      returnValue={JSON.stringify(snap.firstExit.returnValue, null, 2)}
+                    </pre>
+                  ) : null}
+                  {snap.firstExit.error ? (
+                    <p>
+                      thrown: {snap.firstExit.error.type}:{" "}
+                      {snap.firstExit.error.message}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+
+            <div className="text-xs">
+              <p className="mb-1 font-medium text-zinc-400">
+                addMovieToCollections branch flow
+              </p>
+              {snap.branches.length === 0 ? (
+                <p className="text-zinc-600">No branch events yet</p>
+              ) : (
+                <ul className="space-y-1">
+                  {snap.branches.map((branch, index) => (
+                    <li
+                      key={`${branch.label}-${branch.atMs}-${index}`}
+                      className="font-mono text-[10px]"
+                    >
+                      <span className="text-zinc-600">+{branch.msSinceSave}ms</span>{" "}
+                      <span
+                        className={
+                          branch.outcome === "passed" ||
+                          branch.outcome === "entered" ||
+                          branch.outcome === "await"
+                            ? "text-emerald-400"
+                            : branch.outcome === "failed" ||
+                                branch.outcome === "throw" ||
+                                branch.outcome === "catch" ||
+                                branch.outcome === "return"
+                              ? "text-red-300"
+                              : "text-zinc-300"
+                        }
+                      >
+                        [{branch.outcome}]
+                      </span>{" "}
+                      <span className="text-zinc-200">{branch.label}</span>
+                      {branch.detail ? (
+                        <span className="block pl-4 text-zinc-500">
+                          {branch.detail}
+                        </span>
+                      ) : null}
+                      {index < snap.branches.length - 1 ? (
+                        <span className="block pl-2 text-zinc-700">↓</span>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            <div className="text-xs">
+              <p className="mb-1 font-medium text-zinc-400">Timeline</p>
+              {snap.steps.length === 0 ? (
+                <p className="text-zinc-600">No stages recorded yet</p>
+              ) : (
+                <ul>
+                  {snap.steps.map((step, index) => (
+                    <TimelineRow
+                      key={`${step.name}-${step.atMs}-${index}`}
+                      step={step}
+                    />
+                  ))}
+                </ul>
+              )}
+            </div>
+
+            {snap.idChanges.length > 0 ? (
+              <div className="text-xs">
+                <p className="mb-1 font-medium text-amber-300">ID changes</p>
+                <ul className="space-y-1 text-amber-200">
+                  {snap.idChanges.map((change, index) => (
+                    <li key={`${change.atStep}-${index}`}>
+                      at {change.atStep}:{" "}
+                      <span className="font-mono">
+                        {change.from} → {change.to}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </>
+        )}
+      </Surface>
+    </div>
+  );
+}

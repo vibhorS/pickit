@@ -13,6 +13,7 @@ import { DEFAULT_OWNER } from "@/lib/users";
 import { useCollaborationStore } from "@/store/collaboration-store";
 import { useCrewStore } from "@/store/crew-store";
 import { useAuthStore } from "@/store/auth-store";
+import { savePathDebug } from "@/lib/debug/save-path-debug";
 
 /** Stable empty snapshot — never return a fresh [] from a Zustand selector. */
 export const EMPTY_LOCAL_ITEMS: CollectionMovie[] = [];
@@ -145,6 +146,23 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
         source = TMDB_SEARCH_SOURCE,
         metadata,
       ) => {
+        const FILE = "store/local-collection-store.ts";
+        const FN = "addMovieToCollections";
+
+        savePathDebug.mark("addMovieToCollections", {
+          recommendationId: null,
+          path: "capture-save",
+        });
+        savePathDebug.branch(
+          "Entered addMovieToCollections",
+          "entered",
+          `movieId=${movie?.id ?? "null"} collectionIds=${JSON.stringify(collectionIds)}`,
+        );
+        console.error("CALLGRAPH ✓ addMovieToCollections entered", {
+          file: FILE,
+          movieId: movie?.id,
+          collectionIds,
+        });
         const collaboration = useCollaborationStore.getState();
         const uniqueIds = Array.from(
           new Set(collectionIds.filter(Boolean)),
@@ -165,8 +183,26 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
         const added: string[] = [];
         const already: string[] = [];
 
+        savePathDebug.branch(
+          "Condition: movie?.id && uniqueIds.length > 0",
+          movie?.id && uniqueIds.length > 0 ? "passed" : "failed",
+          `movieId=${movie?.id ?? "null"} uniqueIds=${JSON.stringify(uniqueIds)} activeUserId=${collaboration.activeUserId}`,
+        );
+
         if (!movie?.id || uniqueIds.length === 0) {
-          return { added, already };
+          const returnValue = { added, already };
+          savePathDebug.exit({
+            reason:
+              !movie?.id
+                ? "EARLY_RETURN: movie.id missing — cloud upsert never scheduled"
+                : "EARLY_RETURN: uniqueIds empty after membership filter — cloud upsert never scheduled",
+            file: FILE,
+            functionName: FN,
+            line: 178,
+            kind: "return",
+            returnValue,
+          });
+          return returnValue;
         }
         const recommendationMetadata = withSavedTimestamp(
           metadata,
@@ -235,11 +271,43 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
           };
         });
 
+        for (const collectionId of already) {
+          savePathDebug.branch(
+            `Collection ${collectionId} not added locally`,
+            "failed",
+            "deleted override or movie already present",
+          );
+        }
+        for (const collectionId of added) {
+          savePathDebug.branch(
+            `Local add to ${collectionId}`,
+            "passed",
+            `movieId=${movie.id}`,
+          );
+        }
+
+        savePathDebug.branch(
+          "Condition: added.length > 0",
+          added.length > 0 ? "passed" : "failed",
+          `added=${JSON.stringify(added)} already=${JSON.stringify(already)}`,
+        );
+
         if (added.length === 0) {
           console.error(
             "[SAVE-ASSERT] FIRST FAILURE: addMovieToCollections produced zero added collections — cloud repository will never be called",
             { already, collectionIds: uniqueIds, movieId: movie?.id },
           );
+          const returnValue = { added, already };
+          savePathDebug.exit({
+            reason:
+              "RETURN: added.length === 0 — movie already in collections or all deleted; cloud IIFE never started; recommendations.upsert never called",
+            file: FILE,
+            functionName: FN,
+            line: 248,
+            kind: "return",
+            returnValue,
+          });
+          return returnValue;
         } else {
           console.info(
             "[SAVE-ASSERT] Local add succeeded; entering cloud persist for collections",
@@ -275,212 +343,399 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
               source: source.type,
             });
           });
-          void import("@/lib/supabase/client").then(({ isSupabaseConfigured }) => {
-            void (async () => {
-              const { assertStage, recordRepoInstance } = await import(
-                "@/lib/sync/save-assertions"
+
+          savePathDebug.branch(
+            `Schedule cloud persist IIFE for ${collectionId}`,
+            "entered",
+            "void import(@/lib/supabase/client).then(async IIFE)",
+          );
+
+          void import("@/lib/supabase/client")
+            .then(({ isSupabaseConfigured }) => {
+              savePathDebug.branch(
+                "Await: import @/lib/supabase/client",
+                "await",
+                "resolved",
               );
-              const cloudConfigured = isSupabaseConfigured();
-              console.info("STAGE 3: Repository selected", { cloudConfigured });
-              try {
-                assertStage(
-                  3,
-                  "Repository selected",
-                  cloudConfigured,
-                  cloudConfigured
-                    ? "isSupabaseConfigured()=true → getCloudRepositories()"
-                    : "isSupabaseConfigured()=false → CloudRepository NEVER selected; insert will not run",
+              void (async () => {
+                savePathDebug.branch(
+                  "Entered cloud persist IIFE",
+                  "entered",
+                  `collectionId=${collectionId}`,
                 );
-              } catch (err) {
-                console.error(err);
-                return;
-              }
-
-              const { tagRecommendationBirth, traceRecommendation } =
-                await import("@/lib/sync/rec-id-trace");
-
-              // ORIGINAL assignment of CloudRecommendation.id for Save.
-              // Must be a bare UUID — never a prefixed id.
-              const recommendationId = crypto.randomUUID();
-              const rec = tagRecommendationBirth(
-                {
-                  id: recommendationId,
-                  listId: collectionId,
-                  movieId: movie.id,
-                  sourceType: source.type,
-                  sourceLabel: source.label,
-                  metadata: (recommendationMetadata ??
-                    {}) as Record<string, unknown>,
-                  note: recommendationMetadata?.notes ?? null,
-                  addedByUserId,
-                  createdBy: addedByUserId,
-                  updatedBy: addedByUserId,
-                  createdAt: addedAt,
-                  updatedAt: addedAt,
-                  deletedAt: null as string | null,
-                },
-                {
-                  file: "store/local-collection-store.ts",
-                  functionName: "addMovieToCollections",
-                  line: 297,
-                },
-              );
-              traceRecommendation(rec, "after birth in addMovieToCollections", {
-                file: "store/local-collection-store.ts",
-                functionName: "addMovieToCollections",
-                line: 320,
-              });
-
-              const {
-                createSaveTrace,
-                recordStage,
-                persistTraceToSyncStore,
-              } = await import("@/lib/sync/save-pipeline-trace");
-              const { getCloudRepositories } = await import(
-                "@/lib/repositories/cloud"
-              );
-              const { useAuthStore } = await import("@/store/auth-store");
-              const { useCrewStore } = await import("@/store/crew-store");
-
-              const repos = getCloudRepositories();
-              recordRepoInstance(
-                repos,
-                "getCloudRepositories() return value used for Save Recommendations",
-              );
-              recordRepoInstance(
-                repos.recommendations,
-                "repos.recommendations (handler for upsert)",
-              );
-
-              const impl = (repos as { __pickItImplementation?: string })
-                .__pickItImplementation;
-              const recImpl = (
-                repos.recommendations as { __pickItImplementation?: string }
-              ).__pickItImplementation;
-              try {
-                assertStage(
-                  3,
-                  "Repository selected — CloudRepositories identity",
-                  impl === "CloudRepositories" &&
-                    recImpl === "CloudRecommendationRepository",
-                  JSON.stringify({
-                    reposImpl: impl,
-                    recommendationsImpl: recImpl,
-                    reposInstanceId: (
-                      repos as { __pickItInstanceId?: string }
-                    ).__pickItInstanceId,
-                    recommendationsInstanceId: (
-                      repos.recommendations as { __pickItInstanceId?: string }
-                    ).__pickItInstanceId,
-                  }),
-                );
-              } catch (err) {
-                console.error(err);
-                return;
-              }
-
-              console.info(
-                "[SAVE-ASSERT] Calling repos.recommendations.upsert — CloudRepository save entry (no saveRecommendations() method exists in this codebase)",
-              );
-
-              const trace = createSaveTrace("cloud");
-              trace.payload = {
-                recommendationId: rec.id,
-                listId: rec.listId,
-                movieId: rec.movieId,
-              };
-
-              try {
-                const localList = get().createdCollections.find(
-                  (c) => c.id === collectionId,
-                );
-                const crewId = useCrewStore.getState().crew?.id ?? null;
-                const listPayload = {
-                  id: collectionId,
-                  ownerId: localList?.ownerId ?? addedByUserId,
-                  crewId: localList?.householdId ?? crewId,
-                  name: localList?.name ?? collectionId,
-                  emoji: localList?.emoji ?? "🎬",
-                  description: localList?.description ?? null,
-                  archivedAt: null as string | null,
-                  createdBy: localList?.createdBy ?? addedByUserId,
-                  updatedBy: addedByUserId,
-                  createdAt: localList?.createdAt ?? addedAt,
-                  updatedAt: addedAt,
-                  deletedAt: null as string | null,
-                };
-
-                const existingList = await repos.lists.getById(collectionId);
-                if (!existingList) {
-                  await repos.lists.upsert(listPayload);
-                }
-                await repos.movies.upsert(movie);
-
-                if (!navigator.onLine) {
-                  assertStage(
-                    7,
-                    "Insert() called",
-                    false,
-                    "navigator.onLine=false — Supabase insert() was NEVER called",
-                  );
-                }
-
-                traceRecommendation(rec, "before repository.upsert (same object?)", {
-                  file: "store/local-collection-store.ts",
-                  functionName: "addMovieToCollections",
-                  line: 407,
-                });
-
-                // Stages 4–9 are asserted inside CloudRecommendationRepository.upsert
-                const saved = await repos.recommendations.upsert(rec);
-                trace.supabaseResponse = {
-                  id: saved.id,
-                  listId: saved.listId,
-                  movieId: saved.movieId,
-                };
-
-                console.info("STAGE 10: UI refreshed");
-                assertStage(
-                  10,
-                  "UI refreshed",
-                  true,
-                  `cloud row confirmed id=${saved.id}; local Zustand already updated`,
-                );
-
                 try {
-                  const crew = useCrewStore.getState().crew;
-                  if (crew) {
-                    const { crewService } = await import(
-                      "@/lib/services/crew/crew-service"
+                  const { assertStage, recordRepoInstance } = await import(
+                    "@/lib/sync/save-assertions"
+                  );
+                  savePathDebug.branch(
+                    "Await: import save-assertions",
+                    "await",
+                    "resolved",
+                  );
+
+                  const cloudConfigured = isSupabaseConfigured();
+                  console.info("STAGE 3: Repository selected", { cloudConfigured });
+                  savePathDebug.branch(
+                    "Condition: isSupabaseConfigured()",
+                    cloudConfigured ? "passed" : "failed",
+                    `cloudConfigured=${cloudConfigured}`,
+                  );
+
+                  try {
+                    assertStage(
+                      3,
+                      "Repository selected",
+                      cloudConfigured,
+                      cloudConfigured
+                        ? "isSupabaseConfigured()=true → getCloudRepositories()"
+                        : "isSupabaseConfigured()=false → CloudRepository NEVER selected; insert will not run",
                     );
-                    await crewService.recordActivity({
-                      crewId: crew.id,
-                      userId: addedByUserId,
-                      type: "movie-added",
+                    savePathDebug.branch(
+                      "assertStage(3) cloudConfigured",
+                      "passed",
+                      null,
+                    );
+                  } catch (err) {
+                    console.error(err);
+                    savePathDebug.exit({
+                      reason:
+                        "CATCH/RETURN: assertStage(3) isSupabaseConfigured() failed — cloud upsert aborted",
+                      file: FILE,
+                      functionName: FN,
+                      line: 304,
+                      kind: "catch",
+                      error: err,
+                    });
+                    throw err;
+                  }
+
+                  const { tagRecommendationBirth, traceRecommendation } =
+                    await import("@/lib/sync/rec-id-trace");
+                  savePathDebug.branch(
+                    "Await: import rec-id-trace",
+                    "await",
+                    "resolved",
+                  );
+
+                  // ORIGINAL assignment of CloudRecommendation.id for Save.
+                  // Must be a bare UUID — never a prefixed id.
+                  const recommendationId = crypto.randomUUID();
+                  console.error("REC ID CREATION", {
+                    recommendationId,
+                    file: FILE,
+                    line: 304,
+                    implementation: "CURRENT",
+                  });
+                  savePathDebug.mark("REC ID CREATION", {
+                    recommendationId,
+                    path: "capture-save",
+                  });
+                  const rec = tagRecommendationBirth(
+                    {
+                      id: recommendationId,
                       listId: collectionId,
                       movieId: movie.id,
-                      summary: `Added ${movie.title}`,
+                      sourceType: source.type,
+                      sourceLabel: source.label,
+                      metadata: (recommendationMetadata ??
+                        {}) as Record<string, unknown>,
+                      note: recommendationMetadata?.notes ?? null,
+                      addedByUserId,
+                      createdBy: addedByUserId,
+                      updatedBy: addedByUserId,
+                      createdAt: addedAt,
+                      updatedAt: addedAt,
+                      deletedAt: null as string | null,
+                    },
+                    {
+                      file: FILE,
+                      functionName: FN,
+                      line: 297,
+                    },
+                  );
+                  traceRecommendation(rec, "after birth in addMovieToCollections", {
+                    file: FILE,
+                    functionName: FN,
+                    line: 320,
+                  });
+
+                  const {
+                    createSaveTrace,
+                    recordStage,
+                    persistTraceToSyncStore,
+                  } = await import("@/lib/sync/save-pipeline-trace");
+                  const { getCloudRepositories } = await import(
+                    "@/lib/repositories/cloud"
+                  );
+                  const { useAuthStore } = await import("@/store/auth-store");
+                  const { useCrewStore } = await import("@/store/crew-store");
+                  savePathDebug.branch(
+                    "Await: import cloud repos + auth + crew",
+                    "await",
+                    "resolved",
+                  );
+
+                  const repos = getCloudRepositories();
+                  recordRepoInstance(
+                    repos,
+                    "getCloudRepositories() return value used for Save Recommendations",
+                  );
+                  recordRepoInstance(
+                    repos.recommendations,
+                    "repos.recommendations (handler for upsert)",
+                  );
+
+                  const impl = (repos as { __pickItImplementation?: string })
+                    .__pickItImplementation;
+                  const recImpl = (
+                    repos.recommendations as { __pickItImplementation?: string }
+                  ).__pickItImplementation;
+                  savePathDebug.branch(
+                    "Condition: CloudRepositories identity",
+                    impl === "CloudRepositories" &&
+                      recImpl === "CloudRecommendationRepository"
+                      ? "passed"
+                      : "failed",
+                    `reposImpl=${impl} recommendationsImpl=${recImpl}`,
+                  );
+
+                  try {
+                    assertStage(
+                      3,
+                      "Repository selected — CloudRepositories identity",
+                      impl === "CloudRepositories" &&
+                        recImpl === "CloudRecommendationRepository",
+                      JSON.stringify({
+                        reposImpl: impl,
+                        recommendationsImpl: recImpl,
+                        reposInstanceId: (
+                          repos as { __pickItInstanceId?: string }
+                        ).__pickItInstanceId,
+                        recommendationsInstanceId: (
+                          repos.recommendations as { __pickItInstanceId?: string }
+                        ).__pickItInstanceId,
+                      }),
+                    );
+                    savePathDebug.branch(
+                      "assertStage(3) CloudRepositories identity",
+                      "passed",
+                      null,
+                    );
+                  } catch (err) {
+                    console.error(err);
+                    savePathDebug.exit({
+                      reason:
+                        "CATCH/RETURN: assertStage(3) CloudRepositories identity failed — upsert aborted",
+                      file: FILE,
+                      functionName: FN,
+                      line: 397,
+                      kind: "catch",
+                      error: err,
+                    });
+                    throw err;
+                  }
+
+                  console.info(
+                    "[SAVE-ASSERT] Calling repos.recommendations.upsert — CloudRepository save entry (no saveRecommendations() method exists in this codebase)",
+                  );
+
+                  const trace = createSaveTrace("cloud");
+                  trace.payload = {
+                    recommendationId: rec.id,
+                    listId: rec.listId,
+                    movieId: rec.movieId,
+                  };
+
+                  try {
+                    const localList = get().createdCollections.find(
+                      (c) => c.id === collectionId,
+                    );
+                    const crewId = useCrewStore.getState().crew?.id ?? null;
+                    const listPayload = {
+                      id: collectionId,
+                      ownerId: localList?.ownerId ?? addedByUserId,
+                      crewId: localList?.householdId ?? crewId,
+                      name: localList?.name ?? collectionId,
+                      emoji: localList?.emoji ?? "🎬",
+                      description: localList?.description ?? null,
+                      archivedAt: null as string | null,
+                      createdBy: localList?.createdBy ?? addedByUserId,
+                      updatedBy: addedByUserId,
+                      createdAt: localList?.createdAt ?? addedAt,
+                      updatedAt: addedAt,
+                      deletedAt: null as string | null,
+                    };
+
+                    savePathDebug.branch(
+                      "Await: repos.lists.getById",
+                      "await",
+                      `collectionId=${collectionId}`,
+                    );
+                    const existingList = await repos.lists.getById(collectionId);
+                    savePathDebug.branch(
+                      "Condition: existingList",
+                      existingList ? "passed" : "failed",
+                      existingList
+                        ? "list exists — skip lists.upsert"
+                        : "list missing — will lists.upsert",
+                    );
+                    if (!existingList) {
+                      savePathDebug.branch(
+                        "Await: repos.lists.upsert",
+                        "await",
+                        collectionId,
+                      );
+                      await repos.lists.upsert(listPayload);
+                    }
+                    savePathDebug.branch(
+                      "Await: repos.movies.upsert",
+                      "await",
+                      movie.id,
+                    );
+                    await repos.movies.upsert(movie);
+
+                    savePathDebug.branch(
+                      "Condition: navigator.onLine",
+                      navigator.onLine ? "passed" : "failed",
+                      `onLine=${navigator.onLine}`,
+                    );
+                    if (!navigator.onLine) {
+                      assertStage(
+                        7,
+                        "Insert() called",
+                        false,
+                        "navigator.onLine=false — Supabase insert() was NEVER called",
+                      );
+                    }
+
+                    traceRecommendation(rec, "before repository.upsert (same object?)", {
+                      file: FILE,
+                      functionName: FN,
+                      line: 407,
+                    });
+
+                    console.error("CALLGRAPH ✓ repos.recommendations.upsert about to call", {
+                      file: FILE,
+                      recId: rec.id,
+                    });
+                    {
+                      const { getRecommendationObjectId } = await import(
+                        "@/lib/sync/rec-id-trace"
+                      );
+                      savePathDebug.mark("repos.recommendations.upsert", {
+                        recommendationId: rec.id,
+                        objectId: getRecommendationObjectId(rec),
+                        path: "capture-save",
+                      });
+                    }
+                    savePathDebug.branch(
+                      "Await: repos.recommendations.upsert",
+                      "await",
+                      rec.id,
+                    );
+                    // Stages 4–9 are asserted inside CloudRecommendationRepository.upsert
+                    const saved = await repos.recommendations.upsert(rec);
+                    savePathDebug.branch(
+                      "repos.recommendations.upsert returned",
+                      "passed",
+                      `saved.id=${saved.id}`,
+                    );
+                    trace.supabaseResponse = {
+                      id: saved.id,
+                      listId: saved.listId,
+                      movieId: saved.movieId,
+                    };
+
+                    console.info("STAGE 10: UI refreshed");
+                    assertStage(
+                      10,
+                      "UI refreshed",
+                      true,
+                      `cloud row confirmed id=${saved.id}; local Zustand already updated`,
+                    );
+
+                    try {
+                      const crew = useCrewStore.getState().crew;
+                      if (crew) {
+                        const { crewService } = await import(
+                          "@/lib/services/crew/crew-service"
+                        );
+                        await crewService.recordActivity({
+                          crewId: crew.id,
+                          userId: addedByUserId,
+                          type: "movie-added",
+                          listId: collectionId,
+                          movieId: movie.id,
+                          summary: `Added ${movie.title}`,
+                        });
+                      }
+                    } catch (crewErr) {
+                      savePathDebug.branch(
+                        "CATCH: crewService.recordActivity (non-fatal)",
+                        "catch",
+                        crewErr instanceof Error
+                          ? crewErr.message
+                          : String(crewErr),
+                      );
+                      // non-fatal — do not exit; upsert already succeeded
+                    }
+                  } catch (err) {
+                    const message =
+                      err instanceof Error ? err.message : "Cloud save failed";
+                    recordStage(trace, "pipeline", "FAILED", message);
+                    console.error("[SAVE-ASSERT] cloud persist stopped", err);
+                    savePathDebug.exit({
+                      reason: `CATCH: cloud persist threw before/during upsert — ${message}`,
+                      file: FILE,
+                      functionName: FN,
+                      line: 502,
+                      kind: "catch",
+                      error: err,
+                    });
+                    useAuthStore.getState().setCloudSyncMeta("error", 1);
+                    useAuthStore.setState({
+                      error: `Could not save recommendation: ${message}`,
+                    });
+                    throw err;
+                  } finally {
+                    await persistTraceToSyncStore(trace);
+                  }
+                } catch (err) {
+                  // Surface any previously uncaught IIFE failure (including rethrows).
+                  if (!savePathDebug.snapshot().firstExit) {
+                    savePathDebug.exit({
+                      reason: `CATCH: cloud persist IIFE aborted — ${
+                        err instanceof Error ? err.message : String(err)
+                      }`,
+                      file: FILE,
+                      functionName: FN,
+                      line: 289,
+                      kind: "catch",
+                      error: err,
                     });
                   }
-                } catch {
-                  // non-fatal
+                  console.error("[SAVE-PATH] cloud IIFE exception surfaced", err);
                 }
-              } catch (err) {
-                const message =
-                  err instanceof Error ? err.message : "Cloud save failed";
-                recordStage(trace, "pipeline", "FAILED", message);
-                console.error("[SAVE-ASSERT] cloud persist stopped", err);
-                useAuthStore.getState().setCloudSyncMeta("error", 1);
-                useAuthStore.setState({
-                  error: `Could not save recommendation: ${message}`,
-                });
-              } finally {
-                await persistTraceToSyncStore(trace);
-              }
-            })();
-          });
+              })();
+            })
+            .catch((err: unknown) => {
+              savePathDebug.exit({
+                reason: `CATCH: import(@/lib/supabase/client) rejected — cloud IIFE never entered`,
+                file: FILE,
+                functionName: FN,
+                line: 288,
+                kind: "catch",
+                error: err,
+              });
+              console.error("[SAVE-PATH] supabase client import failed", err);
+            });
         }
 
+        savePathDebug.branch(
+          "Sync addMovieToCollections returning (cloud IIFE may still be in flight)",
+          "passed",
+          `added=${JSON.stringify(added)} already=${JSON.stringify(already)}`,
+        );
         return { added, already };
       },
 
