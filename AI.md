@@ -26,6 +26,8 @@ manager, recommendation tracker, or productivity tool.
 - One feature per PR.
 - Keep Cursor changes focused.
 
+
+
 ## Stack
 
 Next.js
@@ -50,6 +52,8 @@ Supabase (schema + client scaffold; local repositories until credentials are set
 - Events / notifications / presence: `lib/domain/events.ts`, notification + presence services
 - Migration: `lib/services/collaboration/migration-service.ts`
 - Supabase SQL: `supabase/schema.sql`
+
+
 
 ## Cloud foundation (Phase 2A)
 
@@ -97,19 +101,39 @@ Trips
 Recipes
 
 Groups  
-  
+
 ## Design Principles
 
 - Build a premium consumer app, not an internal dashboard.
-
 - Every screen should have exactly one primary action.
-
 - Prefer whitespace over borders.
-
 - Prefer typography over badges.
-
 - Reduce visual noise relentlessly.
-
 - If a UI element doesn't help users decide what to do next, question whether it should exist.
-
 - Optimize for delight and calm, not density.
+
+
+
+## Source of Truth
+
+  When cloud mode is enabled (authenticated + Supabase configured), Supabase is the canonical source of truth.
+  Local persistence exists only for:
+
+- UI cache
+- offline support
+- optimistic updates
+- sync queue
+  The application should never maintain two independent sources of truth.
+  All architecture decisions should reinforce this principle.
+
+Before considering a milestone complete:
+
+- npm run build must pass
+
+- npm run test must pass
+
+- TypeScript must pass
+
+- Vercel production build must pass
+
+A feature is not complete until it builds in production.

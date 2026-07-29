@@ -8,7 +8,6 @@ import {
   CheckCircle,
   AlertTriangle,
   Cloud,
-  CloudOff,
   RefreshCw,
   Wifi,
   WifiOff,
@@ -17,14 +16,17 @@ import {
 } from "lucide-react";
 
 function StatusBadge({ status }: { status: string }) {
-  const map: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-    idle: { label: "Synced", variant: "default" },
-    syncing: { label: "Syncing...", variant: "secondary" },
-    offline: { label: "Offline", variant: "outline" },
-    error: { label: "Error", variant: "destructive" },
+  const map: Record<
+    string,
+    { label: string; tone: "neutral" | "accent" | "success" | "warning" | "danger" }
+  > = {
+    idle: { label: "Synced", tone: "success" },
+    syncing: { label: "Syncing...", tone: "accent" },
+    offline: { label: "Offline", tone: "neutral" },
+    error: { label: "Error", tone: "danger" },
   };
-  const { label, variant } = map[status] ?? { label: status, variant: "outline" as const };
-  return <Badge variant={variant}>{label}</Badge>;
+  const { label, tone } = map[status] ?? { label: status, tone: "neutral" as const };
+  return <Badge tone={tone}>{label}</Badge>;
 }
 
 function EventRow({ event }: { event: SyncEvent }) {
