@@ -3,32 +3,57 @@
 /**
  * TEMPORARY — Boot-sequence byCollection diagnosis.
  * Remove with lib/debug/boot-trace.ts after the refresh-loss bug is proven/fixed.
+ *
+ * Renders the COMPLETE byCollection object for every dump stage.
+ * Never focuses a single collection key.
  */
 
 import { isFullDumpStage, useBootTraceStore } from "@/lib/debug/boot-trace";
 import { Surface } from "@/components/ui/surface";
 
+const REQUIRED_STAGE_MATCHERS: Array<{ label: string; match: (s: string) => boolean }> = [
+  {
+    label: "1. loadCloudSnapshot()",
+    match: (s) =>
+      s.includes("byCollection built") ||
+      s.includes("snapshot.byCollection (cloud payload)"),
+  },
+  {
+    label: "2. mergeCloudSnapshot() BEFORE",
+    match: (s) => s.includes("mergeCloudSnapshot: BEFORE"),
+  },
+  {
+    label: "3. mergeCloudSnapshot() AFTER",
+    match: (s) =>
+      s.includes("mergeCloudSnapshot: AFTER") ||
+      s.includes("mergeCloudSnapshot() / applyCloudSnapshot"),
+  },
+  {
+    label: "4. refreshFromCloud()",
+    match: (s) => s.toLowerCase().includes("refreshfromcloud"),
+  },
+];
+
 export function BootTracePanel() {
   const snap = useBootTraceStore();
-  const dumpStages = snap.stages.filter(
-    (stage) => isFullDumpStage(stage.stage) || stage.fullDump.length > 0,
+  const dumpStages = snap.stages.filter((stage) =>
+    isFullDumpStage(stage.stage),
   );
 
   return (
     <div className="space-y-3">
       <h3 className="text-sm font-semibold text-zinc-200">
-        Boot Trace (byCollection)
+        Boot Trace — COMPLETE byCollection
       </h3>
       <p className="text-[11px] text-zinc-500">
-        Full structured dump: every collection after load / merge / refresh,
-        then useCollectionStatsList + CollectionCard / Home card props. Console:
-        [BOOT-TRACE] / [BOOT-TRACE-UI].
+        Prints EVERY collection in byCollection. No focus key. No collapse.
+        Console: [BOOT-TRACE]
       </p>
 
-      <Surface className="space-y-3 p-3">
+      <Surface className="space-y-4 p-3">
         {!snap.bootStartedAt && snap.uiDumps.length === 0 ? (
           <p className="text-xs text-zinc-600">
-            Waiting for CloudDataProvider.boot() or Home/Collections render…
+            Waiting for CloudDataProvider.boot()…
           </p>
         ) : (
           <>
@@ -56,50 +81,83 @@ export function BootTracePanel() {
               ) : null}
             </div>
 
-            <div className="space-y-4">
-              <p className="text-[11px] font-medium text-zinc-400">
-                1–3. byCollection after load / merge / refresh
+            {REQUIRED_STAGE_MATCHERS.map(({ label, match }) => {
+              const matched = dumpStages.filter((stage) => match(stage.stage));
+              return (
+                <div key={label} className="space-y-2">
+                  <p className="text-[11px] font-semibold text-zinc-300">
+                    {label}
+                  </p>
+                  {matched.length === 0 ? (
+                    <p className="font-mono text-[10px] text-zinc-600">
+                      (not recorded yet)
+                    </p>
+                  ) : (
+                    matched.map((stage, index) => (
+                      <div
+                        key={`${stage.stage}-${stage.atMs}-${index}`}
+                        className={`rounded-lg border p-3 ${
+                          stage.incorrect
+                            ? "border-red-500/40 bg-red-950/30"
+                            : "border-zinc-800 bg-black/20"
+                        }`}
+                      >
+                        <div className="font-mono text-[10px] text-zinc-400">
+                          +{stage.msSinceBoot}ms · {stage.operation} ·{" "}
+                          {stage.stage}
+                        </div>
+                        <div className="mt-1 font-mono text-[10px] text-amber-200/90">
+                          raw keys: {stage.rawKeyCount} · dump collections:{" "}
+                          {stage.fullDump.length}
+                        </div>
+                        {stage.detail ? (
+                          <p className="mt-1 font-mono text-[10px] text-zinc-500">
+                            {stage.detail}
+                          </p>
+                        ) : null}
+                        {stage.incorrectReason ? (
+                          <p className="mt-1 font-mono text-[10px] text-red-300">
+                            ✗ {stage.incorrectReason}
+                          </p>
+                        ) : null}
+                        {/* No max-height — never clip collections off-screen */}
+                        <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-zinc-200">
+                          {stage.fullDumpText}
+                        </pre>
+                      </div>
+                    ))
+                  )}
+                </div>
+              );
+            })}
+
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-zinc-300">
+                All full-dump stages ({dumpStages.length})
               </p>
               {dumpStages.map((stage, index) => (
                 <div
-                  key={`${stage.stage}-${stage.atMs}-${index}`}
-                  className={`rounded-lg border p-3 ${
-                    stage.incorrect
-                      ? "border-red-500/40 bg-red-950/30"
-                      : "border-zinc-800 bg-black/20"
-                  }`}
+                  key={`all-dump-${stage.atMs}-${index}`}
+                  className="rounded-lg border border-zinc-800 bg-black/20 p-3"
                 >
-                  <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-[10px]">
-                    <span className="text-zinc-500">+{stage.msSinceBoot}ms</span>
-                    <span className="text-amber-200/90">{stage.operation}</span>
-                    <span className="font-medium text-zinc-200">
-                      {stage.stage}
-                    </span>
+                  <div className="font-mono text-[10px] text-zinc-400">
+                    +{stage.msSinceBoot}ms · rawKeys={stage.rawKeyCount} ·
+                    dump={stage.fullDump.length} · {stage.stage}
                   </div>
-                  {stage.detail ? (
-                    <p className="mt-1 font-mono text-[10px] text-zinc-500">
-                      {stage.detail}
-                    </p>
-                  ) : null}
-                  {stage.incorrectReason ? (
-                    <p className="mt-1 font-mono text-[10px] text-red-300">
-                      ✗ {stage.incorrectReason}
-                    </p>
-                  ) : null}
-                  <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-zinc-300">
-                    {stage.fullDumpText || "byCollection = {}\n(no collections)"}
+                  <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-zinc-200">
+                    {stage.fullDumpText}
                   </pre>
                 </div>
               ))}
             </div>
 
-            <div className="space-y-4">
-              <p className="text-[11px] font-medium text-zinc-400">
-                4–5. useCollectionStatsList → CollectionCard / Home card
+            <div className="space-y-2">
+              <p className="text-[11px] font-semibold text-zinc-300">
+                UI: useCollectionStatsList / CollectionCard / Home
               </p>
               {snap.uiDumps.length === 0 ? (
                 <p className="text-xs text-zinc-600">
-                  Open Home or Collections to populate UI dumps.
+                  Open Home or Collections to populate.
                 </p>
               ) : (
                 snap.uiDumps.map((dump) => (
@@ -107,33 +165,17 @@ export function BootTracePanel() {
                     key={`${dump.stage}-${dump.atMs}`}
                     className="rounded-lg border border-zinc-800 bg-black/20 p-3"
                   >
-                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 font-mono text-[10px]">
-                      <span className="text-zinc-500">+{dump.msSinceBoot}ms</span>
-                      <span className="text-amber-200/90">UI</span>
-                      <span className="font-medium text-zinc-200">
-                        {dump.stage}
-                      </span>
+                    <div className="font-mono text-[10px] text-zinc-400">
+                      +{dump.msSinceBoot}ms · {dump.stage} · rows=
+                      {dump.rows.length}
                     </div>
-                    <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap font-mono text-[10px] text-zinc-300">
+                    <pre className="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[10px] leading-relaxed text-zinc-200">
                       {dump.text}
                     </pre>
                   </div>
                 ))
               )}
             </div>
-
-            <details>
-              <summary className="cursor-pointer text-[11px] text-zinc-500">
-                All boot stages ({snap.stages.length})
-              </summary>
-              <ul className="mt-2 space-y-1 font-mono text-[10px] text-zinc-500">
-                {snap.stages.map((stage, index) => (
-                  <li key={`all-${stage.atMs}-${index}`}>
-                    +{stage.msSinceBoot}ms [{stage.operation}] {stage.stage}
-                  </li>
-                ))}
-              </ul>
-            </details>
           </>
         )}
       </Surface>

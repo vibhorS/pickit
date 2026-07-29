@@ -1,6 +1,9 @@
 /**
  * TEMPORARY — Boot-sequence + UI render tracer.
  * Remove with BootTracePanel after the refresh-loss bug is proven and fixed.
+ *
+ * ALWAYS dumps the COMPLETE byCollection — every key, every collection.
+ * Never focus / summarize / collapse to a single collection.
  */
 
 import { create } from "zustand";
@@ -19,10 +22,10 @@ export type BootTraceOperation =
 
 export type BootTraceCollectionDump = {
   collectionId: string;
-  collectionName: string;
+  name: string;
   movies: string[];
   titles: string[];
-  recIds: string[];
+  recommendations: string[];
   movieCount: number;
   skippedMovies: string[];
   skippedRecIds: string[];
@@ -35,14 +38,15 @@ export type BootTraceStage = {
   msSinceBoot: number;
   operation: BootTraceOperation;
   detail: string | null;
-  byCollectionKeys: string[];
+  /** Exact Object.keys(byCollection) at record time — no filtering. */
+  rawKeys: string[];
+  rawKeyCount: number;
   fullDump: BootTraceCollectionDump[];
   fullDumpText: string;
   incorrect: boolean;
   incorrectReason: string | null;
 };
 
-/** Stats / card props for Supabase → byCollection → Stats → Card comparison. */
 export type BootTraceUiDump = {
   stage: string;
   at: string;
@@ -84,7 +88,6 @@ type BootTraceStore = BootTraceSnapshot & {
     detail?: string | null;
     byCollection: Record<string, CollectionItemInput[]>;
     catalogIds?: string[];
-    /** id → display name */
     collectionNames?: Record<string, string>;
     recommendationMeta?: Array<{
       id: string;
@@ -119,10 +122,11 @@ function buildFullDump(
       }>
     | undefined,
 ): BootTraceCollectionDump[] {
+  // UNION of every known id — never drop empty catalogs.
   const ids = Array.from(
     new Set([
-      ...(catalogIds ?? []),
       ...Object.keys(byCollection),
+      ...(catalogIds ?? []),
       ...Object.keys(collectionNames ?? {}),
       ...(recommendationMeta ?? []).map((row) => row.listId),
     ]),
@@ -151,15 +155,15 @@ function buildFullDump(
     const skippedRecIds = metaForList
       .filter((row) => !row.included)
       .map((row) => row.id);
-    const recIds =
+    const recommendations =
       recIdsFromItems.length > 0 ? recIdsFromItems : recIdsIncluded;
 
     return {
       collectionId,
-      collectionName: collectionNames?.[collectionId] ?? "(name unknown)",
+      name: collectionNames?.[collectionId] ?? "(name unknown)",
       movies,
       titles,
-      recIds,
+      recommendations,
       movieCount: movies.length,
       skippedMovies,
       skippedRecIds,
@@ -167,25 +171,47 @@ function buildFullDump(
   });
 }
 
-export function formatFullDump(dump: BootTraceCollectionDump[]): string {
+/** Exact user-requested shape — every collection, no focus, no collapse. */
+export function formatFullDump(
+  dump: BootTraceCollectionDump[],
+  rawKeys: string[],
+): string {
+  const lines: string[] = [];
+  lines.push(`raw Object.keys(byCollection) count = ${rawKeys.length}`);
+  lines.push(`raw Object.keys(byCollection) = [${rawKeys.join(", ")}]`);
+  lines.push(`dump collection count = ${dump.length}`);
+  lines.push("");
+  lines.push("byCollection = {");
+  lines.push("");
+
   if (dump.length === 0) {
-    return "byCollection = {}\n(no collections)";
+    lines.push("  (empty)");
+    lines.push("}");
+    return lines.join("\n");
   }
-  const lines = [`byCollection (${dump.length} collections)`, ""];
+
   for (const entry of dump) {
-    lines.push(`Collection ID: ${entry.collectionId}`);
-    lines.push(`Collection name: ${entry.collectionName}`);
-    lines.push(`Movies: [${entry.movies.join(", ")}]`);
-    lines.push(`Recommendation IDs: [${entry.recIds.join(", ")}]`);
-    lines.push(`Movie titles: [${entry.titles.join(", ")}]`);
-    lines.push(`Movie count: ${entry.movieCount}`);
+    lines.push(entry.collectionId);
+    lines.push(`  name: ${entry.name}`);
+    lines.push(`  movies: [${entry.movies.join(", ")}]`);
+    lines.push(`  titles: [${entry.titles.join(", ")}]`);
+    lines.push(
+      `  recommendations: [${entry.recommendations.join(", ")}]`,
+    );
+    lines.push(`  movieCount: ${entry.movieCount}`);
     if (entry.skippedMovies.length > 0) {
-      lines.push(`Skipped movies: [${entry.skippedMovies.join(", ")}]`);
-      lines.push(`Skipped recIds: [${entry.skippedRecIds.join(", ")}]`);
+      lines.push(
+        `  skippedMovies: [${entry.skippedMovies.join(", ")}]`,
+      );
+      lines.push(
+        `  skippedRecIds: [${entry.skippedRecIds.join(", ")}]`,
+      );
     }
     lines.push("");
   }
-  return lines.join("\n").trimEnd();
+
+  lines.push("}");
+  return lines.join("\n");
 }
 
 function formatUiRows(
@@ -218,7 +244,7 @@ function detectLostMovies(
     const lost = prev.movies.filter((id) => !currMovies.includes(id));
     if (lost.length > 0) {
       losses.push(
-        `${prev.collectionId} (${prev.collectionName}) lost [${lost.join(", ")}] (was count=${prev.movieCount}, now count=${currMovies.length})`,
+        `${prev.collectionId} (${prev.name}) lost [${lost.join(", ")}] (was count=${prev.movieCount}, now count=${currMovies.length})`,
       );
     }
   }
@@ -226,14 +252,11 @@ function detectLostMovies(
   return `Lost vs prior stage "${priorStage}": ${losses.join(" | ")}`;
 }
 
-/** Stages where we always console the COMPLETE byCollection dump. */
+/** Stages that must always show the COMPLETE byCollection object. */
 export function isFullDumpStage(stage: string): boolean {
   const s = stage.toLowerCase();
   return (
-    (s.includes("loadcloudsnapshot") &&
-      (s.includes("bycollection built") ||
-        s.includes("snapshot.bycollection") ||
-        s.includes("cloud payload"))) ||
+    s.includes("loadcloudsnapshot") ||
     s.includes("mergecloudsnapshot") ||
     s.includes("refreshfromcloud") ||
     s.includes("boot complete") ||
@@ -266,13 +289,14 @@ export const useBootTraceStore = create<BootTraceStore>((set, get) => ({
       bootStartedAt = new Date().toISOString();
     }
     const atMs = nowMs();
+    const rawKeys = Object.keys(input.byCollection);
     const fullDump = buildFullDump(
       input.byCollection,
       input.catalogIds,
       input.collectionNames,
       input.recommendationMeta,
     );
-    const fullDumpText = formatFullDump(fullDump);
+    const fullDumpText = formatFullDump(fullDump, rawKeys);
 
     let incorrect = false;
     let incorrectReason: string | null = null;
@@ -304,7 +328,7 @@ export const useBootTraceStore = create<BootTraceStore>((set, get) => ({
       incorrectReason = skippedAnywhere
         .map(
           (row) =>
-            `${row.collectionId} (${row.collectionName}) skipped movies [${row.skippedMovies.join(", ")}]`,
+            `${row.collectionId} (${row.name}) skipped movies [${row.skippedMovies.join(", ")}]`,
         )
         .join(" | ");
     }
@@ -316,7 +340,8 @@ export const useBootTraceStore = create<BootTraceStore>((set, get) => ({
       msSinceBoot: Math.max(0, Math.round(atMs - bootStartedAtMs)),
       operation: input.operation,
       detail: input.detail ?? null,
-      byCollectionKeys: Object.keys(input.byCollection),
+      rawKeys,
+      rawKeyCount: rawKeys.length,
       fullDump,
       fullDumpText,
       incorrect,
@@ -333,20 +358,17 @@ export const useBootTraceStore = create<BootTraceStore>((set, get) => ({
         state.firstIncorrectReason ?? incorrectReason,
     });
 
+    // Always print COMPLETE dump for load/merge/refresh — never a focus slice.
     if (isFullDumpStage(input.stage) || incorrect) {
-      console.error(`[BOOT-TRACE] ${stage.stage}\n${fullDumpText}`, {
-        operation: stage.operation,
-        msSinceBoot: stage.msSinceBoot,
-        incorrect: stage.incorrect,
-        reason: stage.incorrectReason,
-        detail: stage.detail,
-      });
+      console.error(`[BOOT-TRACE] ${stage.stage}\n${fullDumpText}`);
     } else {
       console.error("[BOOT-TRACE]", {
         stage: stage.stage,
         operation: stage.operation,
         msSinceBoot: stage.msSinceBoot,
-        keys: stage.byCollectionKeys,
+        rawKeyCount: rawKeys.length,
+        rawKeys,
+        dumpCount: fullDump.length,
         detail: stage.detail,
       });
     }
@@ -371,7 +393,6 @@ export const useBootTraceStore = create<BootTraceStore>((set, get) => ({
       rows: input.rows,
     };
 
-    // Replace prior dump for the same stage (avoid unbounded growth on re-renders)
     const uiDumps = [
       ...state.uiDumps.filter((row) => row.stage !== input.stage),
       dump,
@@ -383,14 +404,10 @@ export const useBootTraceStore = create<BootTraceStore>((set, get) => ({
       uiDumps,
     });
 
-    console.error(`[BOOT-TRACE-UI] ${input.stage}\n${text}`, {
-      detail: input.detail ?? null,
-      msSinceBoot: dump.msSinceBoot,
-    });
+    console.error(`[BOOT-TRACE-UI] ${input.stage}\n${text}`);
   },
 }));
 
-/** Imperative API for non-React call sites. */
 export const bootTrace = {
   clear: () => useBootTraceStore.getState().clear(),
   beginBoot: () => useBootTraceStore.getState().beginBoot(),
