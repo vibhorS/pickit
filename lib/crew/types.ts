@@ -47,6 +47,7 @@ export type CrewActivityType =
   | "movie-night-completed"
   | "list-created"
   | "list-renamed"
+  | "crew-renamed"
   | "member-joined"
   | "invite-sent";
 

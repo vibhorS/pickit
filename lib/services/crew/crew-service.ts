@@ -42,8 +42,22 @@ export const crewService = {
   },
 
   async invite(userId: string): Promise<{ token: string; invite: CrewInvitation }> {
-    const snapshot = await this.getSnapshot(userId);
-    if (!snapshot) throw new Error("Join or create a Crew first.");
+    let snapshot = await this.getSnapshot(userId);
+    if (!snapshot) {
+      // Bootstrap personal Crew if cloud boot missed it (RLS / race).
+      const { getCloudRepositories } = await import("@/lib/repositories/cloud");
+      const profile = await getCloudRepositories().auth.getProfile();
+      if (!profile || profile.id !== userId) {
+        throw new Error("Sign in again to invite to your Crew.");
+      }
+      await this.ensureCrew(profile);
+      snapshot = await this.getSnapshot(userId);
+    }
+    if (!snapshot) {
+      throw new Error(
+        "Could not create your Crew. Apply supabase/migrations Phase 2B (including the Crew RLS fix), then refresh.",
+      );
+    }
     const invite = await crewRepo().createInvitation(snapshot.crew.id, userId);
     await crewRepo().appendActivity({
       crewId: snapshot.crew.id,
@@ -148,16 +162,24 @@ export const crewService = {
     await crewRepo().ensurePersonalCrew(userId, "My");
   },
 
-  async renameCrew(userId: string, name: string): Promise<void> {
+  async renameCrew(userId: string, name: string): Promise<import("@/lib/crew/types").Crew> {
     const snapshot = await this.getSnapshot(userId);
-    if (!snapshot) return;
+    if (!snapshot) throw new Error("Join or create a Crew first.");
     const isOwner = snapshot.members.some(
       (member) => member.userId === userId && member.role === "owner",
     );
     if (!isOwner) throw new Error("Only the Crew owner can rename the Crew.");
-    await crewRepo().updateCrew(snapshot.crew.id, userId, {
-      name: name.trim() || snapshot.crew.name,
+    const nextName = name.trim() || snapshot.crew.name;
+    const crew = await crewRepo().updateCrew(snapshot.crew.id, userId, {
+      name: nextName,
     });
+    await this.recordActivity({
+      crewId: snapshot.crew.id,
+      userId,
+      type: "crew-renamed",
+      summary: `Renamed Crew to ${crew.name}`,
+    });
+    return crew;
   },
 
   async recordActivity(input: {

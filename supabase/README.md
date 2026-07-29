@@ -21,6 +21,7 @@ In the Supabase SQL editor, run in order:
 
 1. `supabase/migrations/20260729_phase2a_cloud_foundation.sql`
 2. `supabase/migrations/20260729_phase2b_crew_collaboration.sql`
+3. `supabase/migrations/20260729_phase2b_crew_rls_fix.sql` (required if 2B was applied before this fix)
 
 Enable Realtime for: `lists`, `recommendations`, `ratings`, `crew_members`, `crew_activity`, `presence` (migration adds publication entries when supported).
 
@@ -29,8 +30,11 @@ Enable Realtime for: `lists`, `recommendations`, `ratings`, `crew_members`, `cre
 In Authentication → Providers:
 
 - Enable Email
+- **Disable "Confirm email"** for local development (otherwise signup returns no session, and confirmation emails hit Supabase rate limits quickly while testing)
 - Enable Anonymous (for Guest mode)
 - Optionally enable Google (Apple later)
+
+If you see **email rate limit exceeded**: wait ~1 minute, use a different email, or turn off Confirm email (above). Failed signup attempts still count toward the email send quota.
 
 ## 5. Seed demo Crew
 

@@ -136,7 +136,116 @@ function mapRating(row: {
   };
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 function createAuthRepository(): AuthRepository {
+  async function fetchProfileByUserId(
+    userId: string,
+  ): Promise<UserProfile | null> {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase
+      .from("users")
+      .select("*")
+      .eq("id", userId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    if (error) {
+      logger.error("Failed to load profile", { message: error.message });
+      throw new AuthError("UNKNOWN", error.message);
+    }
+    return data ? mapUser(data) : null;
+  }
+
+  /**
+   * Upsert app profile after auth, then read it back.
+   * Retries briefly so the signup trigger can finish first.
+   */
+  async function ensureAppProfile(input: {
+    userId: string;
+    displayName: string;
+    email: string | null;
+    provider: UserProfile["provider"];
+    isGuest: boolean;
+  }): Promise<UserProfile> {
+    const supabase = getSupabaseBrowserClient();
+    const { data: upserted, error: upsertError } = await supabase
+      .from("users")
+      .upsert({
+        id: input.userId,
+        display_name: input.displayName,
+        email: input.email,
+        provider: input.provider,
+        is_guest: input.isGuest,
+      })
+      .select("*")
+      .maybeSingle();
+
+    if (upserted) return mapUser(upserted);
+
+    if (upsertError) {
+      logger.warn("Profile upsert failed; waiting for trigger", {
+        message: upsertError.message,
+      });
+    }
+
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const existing = await fetchProfileByUserId(input.userId);
+      if (existing) return existing;
+      await delay(150 * (attempt + 1));
+    }
+
+    throw new AuthError(
+      "UNKNOWN",
+      upsertError?.message ??
+        "Profile missing after signup. Confirm the Phase 2A/2B migrations are applied, then try again.",
+    );
+  }
+
+  async function ensureSessionAfterSignup(input: {
+    email: string;
+    password: string;
+    session: {
+      access_token: string;
+      refresh_token: string;
+    } | null;
+  }): Promise<void> {
+    const supabase = getSupabaseBrowserClient();
+    if (input.session) {
+      await supabase.auth.setSession({
+        access_token: input.session.access_token,
+        refresh_token: input.session.refresh_token,
+      });
+      return;
+    }
+
+    // Email confirmation off usually returns a session; if not, sign in now.
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: input.email,
+      password: input.password,
+    });
+    if (data.session) return;
+
+    const message = (error?.message ?? "").toLowerCase();
+    if (
+      message.includes("confirm") ||
+      message.includes("email not confirmed")
+    ) {
+      throw new AuthError(
+        "UNKNOWN",
+        "Confirm your email, then sign in. For local development, disable email confirmation in Supabase → Authentication → Providers → Email.",
+      );
+    }
+
+    throw new AuthError(
+      "UNKNOWN",
+      "No active session after signup. Confirm your email, or disable email confirmation in Supabase Auth for local development.",
+    );
+  }
+
   return {
     async getSession() {
       const supabase = getSupabaseBrowserClient();
@@ -154,67 +263,118 @@ function createAuthRepository(): AuthRepository {
       const { data: sessionData } = await supabase.auth.getSession();
       const userId = sessionData.session?.user.id;
       if (!userId) return null;
-      const { data, error } = await supabase
-        .from("users")
-        .select("*")
-        .eq("id", userId)
-        .is("deleted_at", null)
-        .maybeSingle();
-      if (error) {
-        logger.error("Failed to load profile", { message: error.message });
-        throw new AuthError("UNKNOWN", error.message);
-      }
-      return data ? mapUser(data) : null;
+      return fetchProfileByUserId(userId);
     },
 
     async signUpWithEmail({ email, password, displayName }) {
       const supabase = getSupabaseBrowserClient();
+      const normalizedEmail = email.trim().toLowerCase();
+      const trimmedName = displayName.trim() || "PickIt User";
       const { data, error } = await supabase.auth.signUp({
-        email: email.trim().toLowerCase(),
+        email: normalizedEmail,
         password,
         options: {
           data: {
-            display_name: displayName.trim(),
+            display_name: trimmedName,
             provider: "email",
             is_guest: false,
           },
         },
       });
       if (error) {
-        if (error.message.toLowerCase().includes("already")) {
-          throw new AuthError("EMAIL_IN_USE", "An account with this email exists.");
+        const message = error.message.toLowerCase();
+        if (message.includes("already")) {
+          throw new AuthError(
+            "EMAIL_IN_USE",
+            "An account with this email exists.",
+          );
         }
-        if (error.message.toLowerCase().includes("password")) {
+        if (message.includes("password")) {
           throw new AuthError("WEAK_PASSWORD", error.message);
+        }
+        if (
+          message.includes("rate limit") ||
+          message.includes("over_email_send_rate_limit") ||
+          message.includes("email rate") ||
+          error.status === 429
+        ) {
+          throw new AuthError(
+            "RATE_LIMITED",
+            "Supabase email rate limit hit. For local development: Authentication → Providers → Email → turn off Confirm email, wait a minute, then sign up with a new address (or sign in if the account already exists).",
+          );
         }
         throw new AuthError("UNKNOWN", error.message);
       }
       if (!data.user) throw new AuthError("UNKNOWN", "Sign up failed.");
-      // Ensure profile row exists (trigger may race)
-      await supabase.from("users").upsert({
-        id: data.user.id,
-        display_name: displayName.trim(),
-        email: email.trim().toLowerCase(),
-        provider: "email",
-        is_guest: false,
+
+      // Duplicate email soft-response when confirm-email is enabled.
+      if (
+        Array.isArray(data.user.identities) &&
+        data.user.identities.length === 0
+      ) {
+        throw new AuthError(
+          "EMAIL_IN_USE",
+          "An account with this email exists. Sign in instead.",
+        );
+      }
+
+      await ensureSessionAfterSignup({
+        email: normalizedEmail,
+        password,
+        session: data.session,
       });
-      const profile = await this.getProfile();
-      if (!profile) throw new AuthError("UNKNOWN", "Profile missing after signup.");
-      return profile;
+
+      return ensureAppProfile({
+        userId: data.user.id,
+        displayName: trimmedName,
+        email: normalizedEmail,
+        provider: "email",
+        isGuest: false,
+      });
     },
 
     async signInWithEmail({ email, password }) {
       const supabase = getSupabaseBrowserClient();
-      const { error } = await supabase.auth.signInWithPassword({
-        email: email.trim().toLowerCase(),
+      const normalizedEmail = email.trim().toLowerCase();
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: normalizedEmail,
         password,
       });
       if (error) {
-        throw new AuthError("INVALID_CREDENTIALS", "Incorrect email or password.");
+        const message = error.message.toLowerCase();
+        if (
+          message.includes("confirm") ||
+          message.includes("email not confirmed")
+        ) {
+          throw new AuthError(
+            "UNKNOWN",
+            "Confirm your email, then sign in. For local development, disable email confirmation in Supabase → Authentication → Providers → Email.",
+          );
+        }
+        throw new AuthError(
+          "INVALID_CREDENTIALS",
+          "Incorrect email or password.",
+        );
       }
-      const profile = await this.getProfile();
-      if (!profile) throw new AuthError("UNKNOWN", "Profile missing after sign in.");
-      return profile;
+      if (!data.user) {
+        throw new AuthError(
+          "INVALID_CREDENTIALS",
+          "Incorrect email or password.",
+        );
+      }
+
+      const metaName =
+        (data.user.user_metadata?.display_name as string | undefined)?.trim() ||
+        normalizedEmail.split("@")[0] ||
+        "PickIt User";
+
+      return ensureAppProfile({
+        userId: data.user.id,
+        displayName: metaName,
+        email: normalizedEmail,
+        provider: "email",
+        isGuest: false,
+      });
     },
 
     async continueAsGuest(displayName = "Guest") {
@@ -235,16 +395,19 @@ function createAuthRepository(): AuthRepository {
         );
       }
       if (!data.user) throw new AuthError("UNKNOWN", "Guest sign-in failed.");
-      await supabase.from("users").upsert({
-        id: data.user.id,
-        display_name: displayName,
+      if (data.session) {
+        await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        });
+      }
+      return ensureAppProfile({
+        userId: data.user.id,
+        displayName,
         email: null,
         provider: "guest",
-        is_guest: true,
+        isGuest: true,
       });
-      const profile = await this.getProfile();
-      if (!profile) throw new AuthError("UNKNOWN", "Guest profile missing.");
-      return profile;
     },
 
     async signInWithGoogle() {
@@ -314,13 +477,22 @@ function createAuthRepository(): AuthRepository {
     onAuthStateChange(callback) {
       const supabase = getSupabaseBrowserClient();
       const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (!session) {
+        if (!session?.user) {
           callback(null);
           return;
         }
         try {
-          const profile = await this.getProfile();
-          callback(profile);
+          const profile = await fetchProfileByUserId(session.user.id);
+          callback(
+            profile ??
+              userToProfile({
+                id: session.user.id,
+                name:
+                  session.user.user_metadata?.display_name ??
+                  session.user.email ??
+                  "User",
+              }),
+          );
         } catch {
           callback(
             userToProfile({

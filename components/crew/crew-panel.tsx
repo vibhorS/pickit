@@ -1,10 +1,11 @@
 "use client";
 
-import { Check, Copy, Link2, Users, UserMinus, X } from "lucide-react";
+import { Check, Copy, Link2, Pencil, Users, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CrewMemberPresence } from "@/components/crew/crew-presence";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Surface } from "@/components/ui/surface";
 import { getCrewRoleLabel } from "@/lib/crew/permissions";
 import { analytics } from "@/lib/observability/analytics";
@@ -23,10 +24,45 @@ export function CrewPanel() {
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [crewNameDraft, setCrewNameDraft] = useState("");
 
   useEffect(() => {
     if (pendingInvite) setToken(pendingInvite.token);
   }, [pendingInvite]);
+
+  useEffect(() => {
+    if (crew?.name) setCrewNameDraft(crew.name);
+  }, [crew?.name]);
+
+  useEffect(() => {
+    if (!profile || !isSupabaseConfigured()) return;
+    let cancelled = false;
+    async function bootCrew() {
+      setBusy(true);
+      setError(null);
+      try {
+        await crewService.ensureCrew(profile!);
+        if (cancelled) return;
+        const snapshot = await crewService.getSnapshot(profile!.id);
+        if (!cancelled) setSnapshot(snapshot);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Could not load your Crew. Apply Phase 2B migrations in Supabase.",
+          );
+        }
+      } finally {
+        if (!cancelled) setBusy(false);
+      }
+    }
+    void bootCrew();
+    return () => {
+      cancelled = true;
+    };
+  }, [profile, setSnapshot]);
 
   useEffect(() => {
     if (members.length > 1) analytics.track("crew_connected");
@@ -50,6 +86,34 @@ export function CrewPanel() {
     if (!profile) return;
     const snapshot = await crewService.getSnapshot(profile.id);
     setSnapshot(snapshot);
+  }
+
+  async function handleRename() {
+    if (!profile) return;
+    const next = crewNameDraft.trim();
+    if (!next || next === crew?.name) {
+      setEditingName(false);
+      setCrewNameDraft(crew?.name ?? "");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const renamed = await crewService.renameCrew(profile.id, next);
+      useCrewStore.setState((state) => ({
+        crew: state.crew
+          ? { ...state.crew, name: renamed.name, updatedAt: renamed.updatedAt }
+          : renamed,
+      }));
+      setCrewNameDraft(renamed.name);
+      setEditingName(false);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rename Crew.");
+      setCrewNameDraft(crew?.name ?? "");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function handleInvite() {
@@ -103,19 +167,36 @@ export function CrewPanel() {
 
   const others = members.filter((m) => m.userId !== profile?.id);
   const myRole = members.find((m) => m.userId === profile?.id)?.role;
+  const canRename = myRole === "owner";
 
   return (
     <section className="mt-10">
       <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <Users className="size-4 text-netflix-red" aria-hidden="true" />
-          <h2 className="text-sm font-semibold text-white">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Users
+            className="size-4 shrink-0 text-netflix-red"
+            aria-hidden="true"
+          />
+          <h2 className="truncate text-sm font-semibold text-white">
             {crew?.name ?? "Your Crew"}
           </h2>
+          {canRename && !editingName && (
+            <button
+              type="button"
+              aria-label="Rename Crew"
+              className="rounded-lg p-2 text-netflix-muted transition hover:bg-white/[0.06] hover:text-white"
+              onClick={() => {
+                setCrewNameDraft(crew?.name ?? "");
+                setEditingName(true);
+              }}
+            >
+              <Pencil className="size-3.5" aria-hidden="true" />
+            </button>
+          )}
         </div>
         <Link
           href="/crew"
-          className="text-xs text-netflix-muted underline-offset-2 hover:text-white hover:underline"
+          className="shrink-0 text-xs text-netflix-muted underline-offset-2 hover:text-white hover:underline"
         >
           Open Crew
         </Link>
@@ -125,6 +206,46 @@ export function CrewPanel() {
       </p>
 
       <Surface className="mt-4 space-y-4">
+        {editingName && canRename && (
+          <div className="space-y-3">
+            <Input
+              label="Crew name"
+              value={crewNameDraft}
+              onChange={(event) => setCrewNameDraft(event.target.value)}
+              maxLength={60}
+              autoFocus
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void handleRename();
+                }
+                if (event.key === "Escape") {
+                  setEditingName(false);
+                  setCrewNameDraft(crew?.name ?? "");
+                }
+              }}
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button
+                disabled={busy || !crewNameDraft.trim()}
+                onClick={() => void handleRename()}
+              >
+                Save name
+              </Button>
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => {
+                  setEditingName(false);
+                  setCrewNameDraft(crew?.name ?? "");
+                }}
+              >
+                Cancel
+              </Button>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
           {members.map((member) => {
             const name = member.profile?.displayName ?? "Member";

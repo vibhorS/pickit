@@ -24,6 +24,8 @@ function activityLabel(type: string, summary?: string | null): string {
       return "New list created";
     case "list-renamed":
       return "Renamed a list";
+    case "crew-renamed":
+      return "Renamed the Crew";
     case "member-joined":
       return "Joined the Crew";
     case "invite-sent":

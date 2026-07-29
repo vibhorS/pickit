@@ -35,6 +35,7 @@ export type AuthErrorCode =
   | "SESSION_EXPIRED"
   | "NOT_AUTHENTICATED"
   | "NETWORK"
+  | "RATE_LIMITED"
   | "UNKNOWN";
 
 export class AuthError extends Error {

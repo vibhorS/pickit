@@ -134,6 +134,22 @@ as $$
   );
 $$;
 
+create or replace function public.is_crew_admin(p_crew_id uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.crew_members m
+    where m.crew_id = p_crew_id
+      and m.user_id = auth.uid()
+      and m.role in ('owner', 'admin')
+      and m.deleted_at is null
+  );
+$$;
+
 create or replace function public.user_crew_ids()
 returns setof uuid
 language sql
@@ -202,16 +218,18 @@ alter table public.notifications enable row level security;
 
 drop policy if exists crews_member_select on public.crews;
 create policy crews_member_select on public.crews
-  for select using (public.is_crew_member(id) and deleted_at is null);
+  for select using (
+    deleted_at is null
+    and (
+      public.is_crew_member(id)
+      or created_by = auth.uid()
+    )
+  );
 
 drop policy if exists crews_owner_update on public.crews;
 create policy crews_owner_update on public.crews
   for update using (
-    exists (
-      select 1 from public.crew_members m
-      where m.crew_id = id and m.user_id = auth.uid()
-        and m.role = 'owner' and m.deleted_at is null
-    )
+    public.is_crew_admin(id)
   );
 
 drop policy if exists crews_insert_authenticated on public.crews;
@@ -219,22 +237,34 @@ create policy crews_insert_authenticated on public.crews
   for insert to authenticated with check (created_by = auth.uid());
 
 drop policy if exists crew_members_select on public.crew_members;
-create policy crew_members_select on public.crew_members
-  for select using (public.is_crew_member(crew_id));
-
 drop policy if exists crew_members_owner_manage on public.crew_members;
-create policy crew_members_owner_manage on public.crew_members
-  for all using (
-    exists (
-      select 1 from public.crew_members m
-      where m.crew_id = crew_members.crew_id
-        and m.user_id = auth.uid()
-        and m.role in ('owner', 'admin')
-        and m.deleted_at is null
-    )
-    or user_id = auth.uid()
-  )
-  with check (true);
+drop policy if exists crew_members_insert on public.crew_members;
+drop policy if exists crew_members_update on public.crew_members;
+drop policy if exists crew_members_delete on public.crew_members;
+
+create policy crew_members_select on public.crew_members
+  for select using (
+    user_id = auth.uid()
+    or public.is_crew_member(crew_id)
+  );
+
+create policy crew_members_insert on public.crew_members
+  for insert with check (
+    user_id = auth.uid()
+    or public.is_crew_admin(crew_id)
+  );
+
+create policy crew_members_update on public.crew_members
+  for update using (
+    user_id = auth.uid()
+    or public.is_crew_admin(crew_id)
+  );
+
+create policy crew_members_delete on public.crew_members
+  for delete using (
+    user_id = auth.uid()
+    or public.is_crew_admin(crew_id)
+  );
 
 drop policy if exists crew_invitations_select on public.crew_invitations;
 create policy crew_invitations_select on public.crew_invitations
