@@ -7,9 +7,19 @@ export type AIProviderId = "openai" | "gemini" | "claude" | "stub";
 
 export type AIMessageRole = "system" | "user" | "assistant";
 
+/** Multimodal parts for vision-capable providers. */
+export type AIContentPart =
+  | { type: "text"; text: string }
+  | {
+      type: "image_url";
+      image_url: { url: string; detail?: "low" | "high" | "auto" };
+    };
+
+export type AIMessageContent = string | AIContentPart[];
+
 export type AIMessage = {
   role: AIMessageRole;
-  content: string;
+  content: AIMessageContent;
 };
 
 export type AIJsonSchema = {

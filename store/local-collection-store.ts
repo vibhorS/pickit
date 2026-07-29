@@ -372,6 +372,13 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
             payload: { name: collection.name },
           });
         });
+        void import("@/lib/observability/analytics").then(({ analytics }) => {
+          analytics.track("collection_created", {
+            collectionId: collection.id,
+            crewId,
+            source: "local_collection_store",
+          });
+        });
         void import("@/lib/supabase/client").then(({ isSupabaseConfigured }) => {
           if (!isSupabaseConfigured()) return;
           const list = {

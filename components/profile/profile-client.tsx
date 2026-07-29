@@ -18,6 +18,7 @@ import {
 import { useEffect, useState } from "react";
 import { CrewPanel } from "@/components/crew/crew-panel";
 import { PartnerPanel } from "@/components/partner/partner-panel";
+import { BetaDashboard } from "@/components/profile/beta-dashboard";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -105,6 +106,8 @@ export function ProfileClient() {
   );
 
   const [section, setSection] = useState<SettingsSection>("profile");
+  const [devUnlockTaps, setDevUnlockTaps] = useState(0);
+  const [developerUnlocked, setDeveloperUnlocked] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const stats = useCollectionStats("date-night");
@@ -146,8 +149,10 @@ export function ProfileClient() {
     { id: "privacy", label: "Privacy", icon: Shield },
     { id: "feedback", label: "Feedback", icon: Bug },
     { id: "about", label: "About", icon: Scale },
-    { id: "developer", label: "Developer", icon: Wrench },
   );
+  if (developerMode || developerUnlocked) {
+    navItems.push({ id: "developer", label: "Developer", icon: Wrench });
+  }
 
   return (
     <>
@@ -276,6 +281,7 @@ export function ProfileClient() {
               <Button
                 variant="secondary"
                 onClick={() => {
+                  analytics.track("logout");
                   analytics.reset();
                   void logout();
                 }}
@@ -389,7 +395,20 @@ export function ProfileClient() {
                 PickIt helps two people stop scrolling and start watching. It is
                 a decision engine for movie night — not a movie database.
               </p>
-              <p className="mt-3 text-xs text-white/40">Version 0.3.0 · Closed beta</p>
+              <button
+                type="button"
+                onClick={() => {
+                  const next = devUnlockTaps + 1;
+                  setDevUnlockTaps(next);
+                  if (next >= 7 && !developerUnlocked) {
+                    setDeveloperUnlocked(true);
+                    setToast("Developer tools unlocked");
+                  }
+                }}
+                className="mt-3 text-xs text-white/40"
+              >
+                Version 0.3.0 · Closed beta
+              </button>
             </Surface>
             <Surface>
               <p className="text-sm font-medium text-white">TMDb attribution</p>
@@ -591,6 +610,7 @@ export function ProfileClient() {
                     </div>
                   </div>
                 )}
+                <BetaDashboard />
               </>
             )}
           </section>

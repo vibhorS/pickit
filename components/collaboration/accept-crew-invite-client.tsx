@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createCrewRepository } from "@/lib/repositories/cloud/crew-repository";
+import { analytics } from "@/lib/observability/analytics";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { crewService } from "@/lib/services/crew/crew-service";
 import type { CrewInvitation } from "@/lib/crew/types";
@@ -83,6 +84,7 @@ export function AcceptCrewInviteClient() {
       if (!current) throw new Error("Sign in to accept this invite.");
       const snapshot = await crewService.acceptInvite(token, current);
       setSnapshot(snapshot);
+      analytics.track("invite_accepted", { crewId: snapshot.crew?.id ?? null });
       router.push("/crew");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not accept invite.");

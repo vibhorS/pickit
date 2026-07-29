@@ -1,0 +1,31 @@
+{
+  "id": "scorsese-instagram-top-10",
+  "description": "Top 10 Martin Scorsese Films Instagram-style recommendation post",
+  "expectedContext": "Top 10 Martin Scorsese Films",
+  "expectedSource": "instagram",
+  "expectedRecommendationType": "ranked-list",
+  "expectedIsRanked": true,
+  "expectedCount": 10,
+  "rankedTitles": [
+    { "rank": 1, "title": "Goodfellas", "year": 1990 },
+    { "rank": 2, "title": "Taxi Driver", "year": 1976 },
+    { "rank": 3, "title": "Raging Bull", "year": 1980 },
+    { "rank": 4, "title": "The Departed", "year": 2006 },
+    { "rank": 5, "title": "Casino", "year": 1995 },
+    { "rank": 6, "title": "Mean Streets", "year": 1973 },
+    { "rank": 7, "title": "The Wolf of Wall Street", "year": 2013 },
+    { "rank": 8, "title": "The Irishman", "year": 2019 },
+    { "rank": 9, "title": "Shutter Island", "year": 2010 },
+    { "rank": 10, "title": "Gangs of New York", "year": 2002 }
+  ],
+  "forbiddenTitles": [
+    "Inception",
+    "Avatar",
+    "The Dark Knight",
+    "Titanic",
+    "Spider-Man",
+    "Interstellar",
+    "Barbie",
+    "Oppenheimer"
+  ]
+}

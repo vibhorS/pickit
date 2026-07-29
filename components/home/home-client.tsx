@@ -1,20 +1,64 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Plus } from "lucide-react";
+import { ArrowRight, Camera, Popcorn } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { FadeIn } from "@/components/ui/fade-in";
+import { collectionService } from "@/lib/services/collection-service";
 import { MOTION } from "@/lib/motion";
+import { analytics } from "@/lib/observability/analytics";
+import {
+  EMPTY_CREATED_COLLECTIONS,
+  mergeCollections,
+  useLocalCollectionStore,
+} from "@/store/local-collection-store";
+import { useCollaborationStore } from "@/store/collaboration-store";
+import { useCollectionStatsList } from "@/store/collection-stats-selector";
 
 export function HomeClient() {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
   const [enteringPickMode, setEnteringPickMode] = useState(false);
+  const seedCollections = collectionService.getAll();
+  const createdCollections = useLocalCollectionStore(
+    (state) => state.createdCollections,
+  );
+  const collectionOverrides = useLocalCollectionStore(
+    (state) => state.collectionOverrides,
+  );
+  const memberships = useCollaborationStore((state) => state.memberships);
+  const activeUserId = useCollaborationStore((state) => state.activeUserId);
+
+  const collections = useMemo(() => {
+    const merged = mergeCollections(
+      seedCollections,
+      createdCollections ?? EMPTY_CREATED_COLLECTIONS,
+      collectionOverrides,
+    );
+    return merged.filter((collection) => {
+      const collectionMemberships = memberships.filter(
+        (membership) => membership.collectionId === collection.id,
+      );
+      return (
+        collectionMemberships.length === 0 ||
+        collectionMemberships.some(
+          (membership) => membership.userId === activeUserId,
+        )
+      );
+    });
+  }, [activeUserId, collectionOverrides, createdCollections, memberships, seedCollections]);
+
+  const recentCollections = useMemo(
+    () => collections.slice(0, 3),
+    [collections],
+  );
+  const stats = useCollectionStatsList(recentCollections.map((entry) => entry.id));
 
   function enterPickMode() {
     if (enteringPickMode) return;
+    analytics.track("movie_night_started", { entry: "home_cta" });
     setEnteringPickMode(true);
     const delay = reduceMotion ? 0 : 650;
     window.setTimeout(() => router.push("/movie-night"), delay);
@@ -26,56 +70,88 @@ export function HomeClient() {
         scale: enteringPickMode && !reduceMotion ? 0.975 : 1,
       }}
       transition={{ duration: MOTION.durationSlow, ease: MOTION.ease }}
-      className="mx-auto flex min-h-[min(72vh,880px)] w-full max-w-4xl flex-col justify-center px-1 pb-16"
+      className="mx-auto flex min-h-[75vh] w-full max-w-xl flex-col px-1 pb-8"
     >
-      <FadeIn className="relative py-8 sm:py-14">
+      <FadeIn className="relative py-4">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -left-24 -top-24 size-72 rounded-full bg-netflix-red/10 blur-3xl"
+          className="pointer-events-none absolute -left-16 -top-16 size-56 rounded-full bg-netflix-red/10 blur-3xl"
         />
-        <div className="relative max-w-3xl">
-          <p className="text-4xl font-bold tracking-[-0.04em] text-white sm:text-5xl">
+        <div className="relative">
+          <p className="text-3xl font-bold tracking-[-0.04em] text-white">
             PickIt<span className="text-netflix-red">.</span>
           </p>
-          <h1 className="mt-6 text-4xl font-bold leading-[1.02] tracking-[-0.045em] text-white sm:mt-8 sm:text-6xl lg:text-7xl">
-            Stop scrolling.
-            <br />
-            Start watching.
+          <h1 className="mt-6 text-4xl font-bold leading-[1.02] tracking-[-0.04em] text-white">
+            What should we watch tonight?
           </h1>
-          <p className="mt-6 max-w-lg text-base leading-relaxed text-netflix-muted sm:text-lg">
-            Two people, one movie, less time deciding.
+          <p className="mt-4 max-w-md text-base leading-relaxed text-netflix-muted">
+            Pick faster, scroll less.
           </p>
 
           <button
             type="button"
             onClick={enterPickMode}
             disabled={enteringPickMode}
-            className="btn-primary mt-10 inline-flex min-h-14 w-full items-center justify-center gap-2 px-7 text-base shadow-[var(--shadow-elevated)] sm:w-auto"
+            className="btn-primary mt-8 inline-flex min-h-14 w-full items-center justify-center gap-2 px-7 text-base shadow-[var(--shadow-elevated)]"
           >
-            <span aria-hidden="true">🍿</span>
-            Pick a Movie
+            <Popcorn className="size-5" aria-hidden="true" />
+            Pick Tonight&apos;s Movie
             <ArrowRight className="size-4" aria-hidden="true" />
           </button>
 
-          <div className="mt-12">
+          <div className="mt-4">
             <Link
               href="/capture"
               prefetch
-              className="group inline-flex min-h-11 items-center gap-3 text-sm font-medium text-netflix-muted transition hover:text-white"
+              className="group inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.03] px-4 text-sm font-medium text-white/90 transition hover:bg-white/[0.06]"
             >
-              <span
-                aria-hidden="true"
-                className="grid size-11 place-items-center rounded-full bg-white/[0.05] text-netflix-red transition group-hover:bg-white/[0.09]"
-              >
-                <Plus className="size-4" />
-              </span>
-              Add Recommendation
-              <ArrowRight
-                className="size-4 text-white/20 transition group-hover:translate-x-0.5 group-hover:text-white/60"
-                aria-hidden="true"
-              />
+              <Camera className="size-4 text-netflix-red" aria-hidden="true" />
+              Capture Recommendation
             </Link>
           </div>
+
+          <section className="mt-8">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-netflix-red">
+              Recent Collections
+            </p>
+            <div className="mt-3 space-y-3">
+              {recentCollections.length === 0 ? (
+                <p className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-netflix-muted">
+                  No collections yet. Capture a screenshot to start your first one.
+                </p>
+              ) : (
+                recentCollections.map((collection, index) => {
+                  const stat = stats[index];
+                  const movieCount = stat?.totalMovies ?? collection.items.length;
+                  return (
+                    <Link
+                      key={collection.id}
+                      href={`/collection/${collection.id}`}
+                      className="block rounded-2xl border border-white/10 bg-netflix-surface p-4 transition hover:bg-white/[0.05]"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl" aria-hidden="true">
+                          {collection.emoji}
+                        </span>
+                        <p className="truncate text-base font-semibold text-white">
+                          {collection.name}
+                        </p>
+                      </div>
+                      <p className="mt-2 text-sm text-netflix-muted">
+                        {movieCount} movies · {stat?.mutualMatches ?? 0} mutual matches
+                      </p>
+                      <div className="mt-3 h-2 rounded-full bg-white/[0.08]">
+                        <div
+                          className="h-full rounded-full bg-netflix-red"
+                          style={{ width: `${Math.max(8, stat?.completionPercent ?? 0)}%` }}
+                        />
+                      </div>
+                    </Link>
+                  );
+                })
+              )}
+            </div>
+          </section>
         </div>
       </FadeIn>
 

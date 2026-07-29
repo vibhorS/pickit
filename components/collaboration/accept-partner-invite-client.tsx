@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { getRepositories } from "@/lib/repositories/index";
+import { analytics } from "@/lib/observability/analytics";
 import type { PartnerRelationship, UserProfile } from "@/lib/types";
 import { useAuthStore } from "@/store/auth-store";
 
@@ -53,6 +54,7 @@ export function AcceptPartnerInviteClient() {
     try {
       await ensureSignedIn();
       await acceptPartnerInvite(token);
+      analytics.track("invite_accepted", { kind: "partner" });
       router.push("/profile");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not accept invite.");

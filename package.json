@@ -9,6 +9,7 @@
     "lint": "eslint",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:capture-live": "CAPTURE_LIVE_EVAL=1 vitest run scorsese-regression",
     "db:seed": "tsx scripts/db-seed.ts seed",
     "db:reset": "tsx scripts/db-seed.ts reset"
   },

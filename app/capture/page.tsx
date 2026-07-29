@@ -1,4 +1,4 @@
-import { CapturePipelineClient } from "@/components/capture/pipeline/capture-pipeline-client";
+import { CaptureIntelligenceClient } from "@/components/capture/intelligence/capture-intelligence-client";
 import { PageShell } from "@/components/page-shell";
 import { collectionService } from "@/lib/services/collection-service";
 
@@ -7,7 +7,7 @@ export default function CapturePage() {
 
   return (
     <PageShell wide top>
-      <CapturePipelineClient seedCollections={seedCollections} />
+      <CaptureIntelligenceClient seedCollections={seedCollections} />
     </PageShell>
   );
 }

@@ -30,6 +30,7 @@ export type TmdbSearchMovie = {
   releaseYear: number | null;
   overview: string;
   rating: number;
+  voteCount: number;
   genres: string[];
 };
 
@@ -40,6 +41,7 @@ type TmdbSearchMovieResult = {
   release_date?: string;
   overview: string;
   vote_average: number;
+  vote_count?: number;
   genre_ids: number[];
 };
 
@@ -77,6 +79,7 @@ function mapSearchResult(movie: TmdbSearchMovieResult): TmdbSearchMovie {
     releaseYear: Number.isFinite(releaseYear) ? releaseYear : null,
     overview: movie.overview,
     rating: movie.vote_average,
+    voteCount: typeof movie.vote_count === "number" ? movie.vote_count : 0,
     genres: mapGenres(movie.genre_ids),
   };
 }

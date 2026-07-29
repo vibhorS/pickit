@@ -99,6 +99,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   const [step, setStep] = useState<Step>({ kind: "picker" });
   const [pending, setPending] = useState<PendingCollection | null>(null);
   const restoredSession = useRef(false);
+  const movieNightStartedAt = useRef<number>(Date.now());
   const currentSession = useSessionStore((state) => state.current);
   const setCurrentSession = useSessionStore(
     (state) => state.setCurrentSession,
@@ -142,6 +143,13 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
       ),
     [collectionIds, allStats],
   );
+
+  useEffect(() => {
+    analytics.track("movie_night_opened", {
+      collectionCount: cards.length,
+    });
+    movieNightStartedAt.current = Date.now();
+  }, [cards.length]);
 
   useEffect(() => {
     const finish = () => {
@@ -461,6 +469,14 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
         gameId,
         collectionId: collection.id,
       });
+      analytics.timing(
+        "movie_night_duration",
+        Date.now() - movieNightStartedAt.current,
+        {
+          gameId,
+          collectionId: collection.id,
+        },
+      );
       setStep({
         kind: "winner",
         collection,

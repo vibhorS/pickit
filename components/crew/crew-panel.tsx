@@ -68,6 +68,10 @@ export function CrewPanel() {
     if (members.length > 1) analytics.track("crew_connected");
   }, [members.length]);
 
+  useEffect(() => {
+    analytics.setContext({ crewId: crew?.id ?? null });
+  }, [crew?.id]);
+
   if (!isSupabaseConfigured()) {
     return (
       <section className="mt-10">
@@ -86,6 +90,9 @@ export function CrewPanel() {
     if (!profile) return;
     const snapshot = await crewService.getSnapshot(profile.id);
     setSnapshot(snapshot);
+    if (snapshot?.crew && members.length === 0) {
+      analytics.track("crew_created", { crewId: snapshot.crew.id });
+    }
   }
 
   async function handleRename() {
@@ -123,6 +130,7 @@ export function CrewPanel() {
     try {
       const { token: next } = await crewService.invite(profile.id);
       setToken(next);
+      analytics.track("invite_sent", { crewId: crew?.id ?? null });
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create invite.");
@@ -135,6 +143,7 @@ export function CrewPanel() {
     if (!token) return;
     const url = `${window.location.origin}/invite/crew/${token}`;
     await navigator.clipboard.writeText(url);
+    analytics.feature("invite_link_copied", { crewId: crew?.id ?? null });
     setCopied(true);
     window.setTimeout(() => setCopied(false), 2000);
   }
