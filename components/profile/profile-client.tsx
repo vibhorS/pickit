@@ -311,9 +311,9 @@ export function ProfileClient() {
             </div>
 
             <div className="mt-10 space-y-6">
-              <BootTracePanel />
               <SavePathDebugPanel />
               <SyncDashboard />
+              <BootTracePanel />
             </div>
           </section>
         )}
