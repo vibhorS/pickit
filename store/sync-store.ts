@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import type { SyncStatus } from "@/lib/types";
+import type { SavePipelineTrace } from "@/lib/sync/save-pipeline-trace";
 
 export type SyncEvent = {
   id: string;
@@ -30,6 +31,8 @@ type SyncStore = {
   realtimeEvents: number;
   unsyncedObjects: number;
   recentEvents: SyncEvent[];
+  lastSaveTrace: SavePipelineTrace | null;
+  lastError: string | null;
 
   setStatus: (status: SyncStatus) => void;
   setRepositoryMode: (mode: "cloud" | "local") => void;
@@ -42,6 +45,8 @@ type SyncStore = {
   recordMergeConflict: (entity: string, entityId: string, detail?: string) => void;
   setPendingWrites: (count: number) => void;
   setUnsyncedObjects: (count: number) => void;
+  setLastSaveTrace: (trace: SavePipelineTrace) => void;
+  setLastError: (error: string | null) => void;
 };
 
 function eventId(): string {
@@ -71,12 +76,17 @@ export const useSyncStore = create<SyncStore>((set) => ({
   realtimeEvents: 0,
   unsyncedObjects: 0,
   recentEvents: [],
+  lastSaveTrace: null,
+  lastError: null,
 
   setStatus: (status) => set({ status }),
   setRepositoryMode: (mode) => set({ repositoryMode: mode }),
   setRealtimeConnected: (connected) => set({ realtimeConnected: connected }),
   setPendingWrites: (count) => set({ pendingWrites: count }),
   setUnsyncedObjects: (count) => set({ unsyncedObjects: count }),
+  setLastSaveTrace: (trace) =>
+    set({ lastSaveTrace: trace, lastError: trace.lastError }),
+  setLastError: (error) => set({ lastError: error }),
 
   recordEvent: (event) =>
     set((state) => ({ recentEvents: pushEvent(state.recentEvents, event) })),

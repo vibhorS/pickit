@@ -192,6 +192,10 @@ class CloudSyncEngine {
             String(payload.userId),
           );
         } else {
+          const moviePayload = payload.movie as Movie | undefined;
+          if (moviePayload) {
+            await repos.movies.upsert(moviePayload);
+          }
           await repos.recommendations.upsert(
             payload as unknown as CloudRecommendation,
           );

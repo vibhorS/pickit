@@ -128,7 +128,7 @@ export const crewDemoTools = {
     const now = new Date().toISOString();
     for (const movie of DEMO_MOVIES) {
       await repos.recommendations.upsert({
-        id: createId("rec"),
+        id: crypto.randomUUID(),
         listId,
         movieId: movie.id,
         sourceType: "search",

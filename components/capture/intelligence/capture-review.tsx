@@ -22,6 +22,10 @@ import { CaptureScreenshotPanel } from "@/components/capture/intelligence/captur
 import { findDuplicateCollections } from "@/lib/capture/intelligence/duplicates";
 import { buildObservation } from "@/lib/capture/intelligence/ux-copy";
 import { analytics } from "@/lib/observability/analytics";
+import {
+  assertStage,
+  resetSaveAssertions,
+} from "@/lib/sync/save-assertions";
 import type {
   CaptureItem,
   MatchedRecommendation,
@@ -709,7 +713,25 @@ export function CaptureReview({
                 (item.selectedCollectionIds.length === 0 &&
                   item.createCollectionNames.length === 0)
               }
-              onClick={onImport}
+              onClick={() => {
+                console.info("STAGE 1: Save button clicked");
+                void import("@/lib/sync/rec-id-trace").then(({ resetRecIdTrace }) => {
+                  resetRecIdTrace();
+                });
+                resetSaveAssertions();
+                assertStage(
+                  1,
+                  "Save button clicked",
+                  true,
+                  JSON.stringify({
+                    selectedCount,
+                    collectionIds: item.selectedCollectionIds,
+                    createNames: item.createCollectionNames,
+                    importing,
+                  }),
+                );
+                onImport();
+              }}
             >
               {importing ? "Saving…" : "Save recommendations"}
             </Button>

@@ -724,29 +724,114 @@ function createRecommendationRepository(): RecommendationRepository {
       return this.listForListIds([listId]);
     },
     async upsert(item) {
+      const { assertStage } = await import("@/lib/sync/save-assertions");
+      const {
+        assertValidRecommendationId,
+        traceRecommendation,
+      } = await import("@/lib/sync/rec-id-trace");
+
+      traceRecommendation(item, "repository.upsert entered", {
+        file: "lib/repositories/cloud/index.ts",
+        functionName: "recommendations.upsert",
+        line: 726,
+      });
+
+      assertStage(
+        4,
+        "Repository.saveRecommendations() entered",
+        true,
+        `CloudRecommendationRepository.upsert entered for movie_id=${item.movieId} list_id=${item.listId} id=${item.id}`,
+      );
+
+      // Do NOT rewrite. Invalid IDs must fail loudly.
+      assertValidRecommendationId(item.id, "recommendations.upsert");
+
+      assertStage(
+        5,
+        "Payload created",
+        Boolean(item?.id && item?.listId && item?.movieId),
+        JSON.stringify({
+          id: item.id,
+          list_id: item.listId,
+          movie_id: item.movieId,
+          source_type: item.sourceType ?? null,
+          source_label: item.sourceLabel ?? null,
+          added_by_user_id: item.addedByUserId,
+        }),
+      );
+
       const supabase = getSupabaseBrowserClient();
+      assertStage(
+        6,
+        "Supabase client obtained",
+        Boolean(supabase),
+        `clientConstructor=${(supabase as { constructor?: { name?: string } }).constructor?.name ?? "unknown"}`,
+      );
+
+      const insertPayload = {
+        id: item.id,
+        list_id: item.listId,
+        movie_id: item.movieId,
+        source_type: item.sourceType ?? null,
+        source_label: item.sourceLabel ?? null,
+        metadata: item.metadata ?? {},
+        note: item.note ?? null,
+        added_by_user_id: item.addedByUserId,
+        created_by: item.createdBy,
+        updated_by: item.updatedBy,
+        created_at: item.createdAt,
+        updated_at: item.updatedAt,
+        deleted_at: item.deletedAt ?? null,
+      };
+
+      console.info("STAGE 7: Insert() called", {
+        table: "recommendations",
+        method: "upsert",
+        onConflict: "list_id,movie_id",
+        payload: insertPayload,
+      });
+      traceRecommendation(item, "Supabase payload about to send (same object id)", {
+        file: "lib/repositories/cloud/index.ts",
+        functionName: "recommendations.upsert",
+        line: 780,
+      });
+      assertStage(
+        7,
+        "Insert() called",
+        true,
+        `supabase.from('recommendations').upsert(...) id=${insertPayload.id}`,
+      );
+
       const { data, error } = await supabase
         .from("recommendations")
-        .upsert(
-          {
-            id: item.id,
-            list_id: item.listId,
-            movie_id: item.movieId,
-            source_type: item.sourceType ?? null,
-            source_label: item.sourceLabel ?? null,
-            metadata: item.metadata ?? {},
-            note: item.note ?? null,
-            added_by_user_id: item.addedByUserId,
-            created_by: item.createdBy,
-            updated_by: item.updatedBy,
-            created_at: item.createdAt,
-            updated_at: item.updatedAt,
-            deleted_at: item.deletedAt ?? null,
-          },
-          { onConflict: "list_id,movie_id" },
-        )
+        .upsert(insertPayload, { onConflict: "list_id,movie_id" })
         .select("*")
         .single();
+
+      console.info("STAGE 8: Await insert returned", { data, error });
+      assertStage(
+        8,
+        "Await insert returned",
+        true,
+        error
+          ? `error=${error.message} code=${error.code ?? "n/a"}`
+          : `data.id=${data?.id}`,
+      );
+
+      console.info("STAGE 9: Response received", {
+        ok: !error && Boolean(data),
+        data,
+        error,
+      });
+      assertStage(
+        9,
+        "Response received",
+        !error && Boolean(data),
+        error
+          ? `Supabase rejected insert: ${error.message} (code=${error.code ?? "n/a"} details=${error.details ?? "n/a"} hint=${error.hint ?? "n/a"})`
+          : `row id=${data!.id} list_id=${data!.list_id} movie_id=${data!.movie_id}`,
+      );
+
       if (error || !data) {
         throw new Error(error?.message ?? "Recommendation upsert failed");
       }
@@ -934,21 +1019,38 @@ function createMigrationRepository(): MigrationRepository {
 }
 
 let cached: CloudRepositories | null = null;
+let cloudInstanceSerial = 0;
 
 export function getCloudRepositories(): CloudRepositories {
   if (!isSupabaseConfigured()) {
     throw new Error("Supabase is not configured.");
   }
   if (!cached) {
+    cloudInstanceSerial += 1;
+    const recommendations = createRecommendationRepository() as ReturnType<
+      typeof createRecommendationRepository
+    > & {
+      __pickItImplementation?: string;
+      __pickItInstanceId?: string;
+    };
+    recommendations.__pickItImplementation =
+      "CloudRecommendationRepository";
+    recommendations.__pickItInstanceId = `cloud-recommendations-${cloudInstanceSerial}`;
+
     cached = {
       auth: createAuthRepository(),
       movies: createMovieRepository(),
       lists: createListRepository(),
-      recommendations: createRecommendationRepository(),
+      recommendations,
       ratings: createRatingRepository(),
       preferences: createPreferencesRepository(),
       migrations: createMigrationRepository(),
       crew: createCrewRepository(),
+      __pickItImplementation: "CloudRepositories",
+      __pickItInstanceId: `cloud-repos-singleton-${cloudInstanceSerial}`,
+    } as CloudRepositories & {
+      __pickItImplementation: string;
+      __pickItInstanceId: string;
     };
   }
   return cached;

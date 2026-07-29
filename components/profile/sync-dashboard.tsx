@@ -102,6 +102,112 @@ export function SyncDashboard() {
       </Surface>
 
       <div>
+        <h4 className="text-xs font-semibold text-zinc-400 mb-2">Save Assert Stages</h4>
+        <Surface className="p-2 max-h-60 overflow-y-auto">
+          {typeof window !== "undefined" &&
+          window.__PICKIT_SAVE_STAGES__ &&
+          window.__PICKIT_SAVE_STAGES__.length > 0 ? (
+            <div className="space-y-1 text-xs">
+              {window.__PICKIT_SAVE_FIRST_FAILURE__ ? (
+                <p className="text-red-400">
+                  FIRST FAILURE: STAGE {window.__PICKIT_SAVE_FIRST_FAILURE__.stage}{" "}
+                  {window.__PICKIT_SAVE_FIRST_FAILURE__.name}
+                </p>
+              ) : null}
+              {window.__PICKIT_SAVE_REPO_INSTANCE__ ? (
+                <pre className="overflow-x-auto text-[10px] text-emerald-400/80">
+                  {JSON.stringify(
+                    {
+                      impl: (
+                        window.__PICKIT_SAVE_REPO_INSTANCE__ as {
+                          __pickItImplementation?: string;
+                        }
+                      ).__pickItImplementation,
+                      id: (
+                        window.__PICKIT_SAVE_REPO_INSTANCE__ as {
+                          __pickItInstanceId?: string;
+                        }
+                      ).__pickItInstanceId,
+                    },
+                    null,
+                    0,
+                  )}
+                </pre>
+              ) : null}
+              {window.__PICKIT_SAVE_STAGES__.map((stage, index) => (
+                <div
+                  key={`${stage.stage}-${index}`}
+                  className="flex gap-2 border-b border-zinc-800 py-0.5 last:border-0"
+                >
+                  <span className={stage.ok ? "text-emerald-400" : "text-red-400"}>
+                    {stage.ok ? "OK" : "FAIL"}
+                  </span>
+                  <span className="text-zinc-300">
+                    STAGE {stage.stage}: {stage.name}
+                  </span>
+                  {stage.detail ? (
+                    <span className="truncate text-zinc-600">{stage.detail}</span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-zinc-600 py-2 text-center">
+              Click Save recommendations, then inspect console + this panel
+            </p>
+          )}
+        </Surface>
+      </div>
+
+      <div>
+        <h4 className="text-xs font-semibold text-zinc-400 mb-2">Last Save Trace</h4>
+        <Surface className="p-2 max-h-60 overflow-y-auto">
+          {!store.lastSaveTrace ? (
+            <p className="text-xs text-zinc-600 py-2 text-center">No save attempts yet</p>
+          ) : (
+            <div className="space-y-1 text-xs">
+              <div className="flex justify-between text-zinc-400">
+                <span>Repo: {store.lastSaveTrace.repositoryMode}</span>
+                <span>{new Date(store.lastSaveTrace.startedAt).toLocaleTimeString()}</span>
+              </div>
+              {store.lastSaveTrace.payload ? (
+                <pre className="overflow-x-auto text-[10px] text-zinc-500">
+                  {JSON.stringify(store.lastSaveTrace.payload, null, 0)}
+                </pre>
+              ) : null}
+              {store.lastSaveTrace.supabaseResponse ? (
+                <pre className="overflow-x-auto text-[10px] text-emerald-500/80">
+                  {JSON.stringify(store.lastSaveTrace.supabaseResponse, null, 0)}
+                </pre>
+              ) : null}
+              {store.lastError ? (
+                <p className="text-red-400">{store.lastError}</p>
+              ) : null}
+              {store.lastSaveTrace.stages.map((stage, index) => (
+                <div key={`${stage.stage}-${index}`} className="flex gap-2 border-b border-zinc-800 py-0.5 last:border-0">
+                  <span
+                    className={
+                      stage.status === "SUCCESS"
+                        ? "text-emerald-400"
+                        : stage.status === "FAILED"
+                          ? "text-red-400"
+                          : "text-zinc-500"
+                    }
+                  >
+                    {stage.status}
+                  </span>
+                  <span className="text-zinc-300">{stage.stage}</span>
+                  {stage.detail ? (
+                    <span className="truncate text-zinc-600">{stage.detail}</span>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </Surface>
+      </div>
+
+      <div>
         <h4 className="text-xs font-semibold text-zinc-400 mb-2">Recent Events</h4>
         <Surface className="p-2 max-h-60 overflow-y-auto">
           {store.recentEvents.length === 0 ? (

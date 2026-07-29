@@ -25,6 +25,7 @@ import type {
 } from "@/lib/capture/intelligence/types";
 import { fadeUp, MOTION } from "@/lib/motion";
 import { analytics } from "@/lib/observability/analytics";
+import { assertStage } from "@/lib/sync/save-assertions";
 import type { Collection } from "@/lib/types";
 import {
   filterInboxItems,
@@ -468,6 +469,28 @@ export function CaptureIntelligenceClient({
   };
 
   const onImport = () => {
+    console.info("STAGE 2: Save handler entered");
+    try {
+      assertStage(
+        2,
+        "Save handler entered",
+        Boolean(active),
+        active
+          ? JSON.stringify({
+              captureId: active.id,
+              selectedCollectionIds: active.selectedCollectionIds,
+              createCollectionNames: active.createCollectionNames,
+              selectedMatches: active.matches.filter(
+                (m) => m.selected && !m.rejected && m.movie,
+              ).length,
+            })
+          : "active capture is null — handler aborted",
+      );
+    } catch (err) {
+      console.error("[SAVE-ASSERT] stopped in onImport stage 2", err);
+      return;
+    }
+
     if (!active) return;
     setImporting(true);
     try {
@@ -477,6 +500,15 @@ export function CaptureIntelligenceClient({
         collectionIds.push(created.id);
       }
       const uniqueIds = Array.from(new Set(collectionIds));
+      console.info("STAGE 2b: Collections resolved", { uniqueIds });
+      if (uniqueIds.length === 0) {
+        console.error(
+          "[SAVE-ASSERT] FIRST FAILURE after STAGE 2: no collection IDs — Repository.save path will never run",
+        );
+        throw new Error(
+          "SAVE PIPELINE STOPPED: no collection IDs resolved",
+        );
+      }
       const imported: string[] = [];
       for (const match of active.matches) {
         if (!match.selected || match.rejected || !match.movie) continue;
@@ -488,6 +520,15 @@ export function CaptureIntelligenceClient({
           savedAt: new Date().toISOString(),
         });
         imported.push(match.movie.id);
+      }
+      console.info("STAGE 2c: Movies handed to store", { imported });
+      if (imported.length === 0) {
+        console.error(
+          "[SAVE-ASSERT] FIRST FAILURE after STAGE 2: no selected movies — Repository.save path will never run",
+        );
+        throw new Error(
+          "SAVE PIPELINE STOPPED: no selected matches to persist",
+        );
       }
       updateItem(active.id, {
         status: "imported",
@@ -507,6 +548,12 @@ export function CaptureIntelligenceClient({
         movieIds: imported,
         collectionIds: uniqueIds,
       });
+      // STAGE 10 is asserted only after Supabase insert returns (see cloud repo / store).
+      console.info(
+        "[SAVE-ASSERT] Local UI celebration shown — awaiting STAGE 3–9 from cloud path",
+      );
+    } catch (err) {
+      console.error("[SAVE-ASSERT] stopped in onImport", err);
     } finally {
       setImporting(false);
     }
