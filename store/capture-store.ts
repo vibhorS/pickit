@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { CaptureSession } from "@/lib/capture/types";
-import { DEFAULT_OWNER } from "@/lib/users";
+import { isLegacyUserId } from "@/lib/identity/canonical-user-id";
 
 export const EMPTY_CAPTURE_SESSIONS: CaptureSession[] = [];
 
@@ -29,7 +29,7 @@ export const useCaptureStore = create<CaptureStore>()(
     }),
     {
       name: "decision-capture-sessions",
-      version: 1,
+      version: 2,
       partialize: (state) => ({ sessions: state.sessions }),
       migrate: (persisted) => {
         const data = (persisted ?? {}) as Partial<CaptureStore>;
@@ -38,9 +38,10 @@ export const useCaptureStore = create<CaptureStore>()(
             (session) => ({
               ...session,
               savedByUserId:
-                session.status === "saved"
-                  ? session.savedByUserId ?? DEFAULT_OWNER.id
-                  : session.savedByUserId,
+                session.savedByUserId &&
+                !isLegacyUserId(session.savedByUserId)
+                  ? session.savedByUserId
+                  : undefined,
             }),
           ),
         };

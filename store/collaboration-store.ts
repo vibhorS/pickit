@@ -1,10 +1,9 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import {
-  DEFAULT_COLLABORATOR,
-  DEFAULT_OWNER,
-  DEFAULT_USERS,
-} from "@/lib/users";
+  isLegacyUserId,
+  remapUserId,
+} from "@/lib/identity/canonical-user-id";
 import type {
   AppNotification,
   CollectionActivity,
@@ -27,23 +26,9 @@ function createId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/** Fresh installs start with no memberships — ensureOwner / auth remap populate UUIDs. */
 function seedMemberships(): CollectionMembership[] {
-  return SEED_COLLECTION_IDS.flatMap((collectionId) => [
-    {
-      id: `membership-${collectionId}-${DEFAULT_OWNER.id}`,
-      collectionId,
-      userId: DEFAULT_OWNER.id,
-      role: "owner" as const,
-      joinedAt: "2026-01-01T00:00:00.000Z",
-    },
-    {
-      id: `membership-${collectionId}-${DEFAULT_COLLABORATOR.id}`,
-      collectionId,
-      userId: DEFAULT_COLLABORATOR.id,
-      role: "member" as const,
-      joinedAt: "2026-01-02T00:00:00.000Z",
-    },
-  ]);
+  return [];
 }
 
 type RecordActivityInput = {
@@ -51,6 +36,15 @@ type RecordActivityInput = {
   userId: string;
   type: CollectionActivityType;
   movieId?: string;
+};
+
+type AdoptCanonicalIdentityInput = {
+  userId: string;
+  displayName: string;
+  email?: string | null;
+  avatarUrl?: string | null;
+  color: string;
+  partnerUserId?: string | null;
 };
 
 type CollaborationStore = {
@@ -65,6 +59,7 @@ type CollaborationStore = {
   getCollectionMembers: (collectionId: string) => User[];
   ensureOwner: (collectionId: string) => void;
   migrateCollectionOwners: (collectionIds: string[]) => void;
+  adoptCanonicalIdentity: (input: AdoptCanonicalIdentityInput) => void;
   createInvitation: (collectionId: string) => Invitation | null;
   acceptInvitation: (token: string, name: string) => User | null;
   revokeInvitation: (invitationId: string) => void;
@@ -74,14 +69,15 @@ type CollaborationStore = {
 export const useCollaborationStore = create<CollaborationStore>()(
   persist(
     (set, get) => ({
-      users: DEFAULT_USERS,
+      users: [],
       memberships: seedMemberships(),
       invitations: [],
       notifications: [],
       activity: [],
-      activeUserId: DEFAULT_OWNER.id,
+      activeUserId: "",
 
       setActiveUser: (userId) => {
+        if (!userId) return;
         if (!get().users.some((user) => user.id === userId)) return;
         set({ activeUserId: userId });
       },
@@ -103,6 +99,7 @@ export const useCollaborationStore = create<CollaborationStore>()(
       ensureOwner: (collectionId) => {
         if (!collectionId) return;
         const userId = get().activeUserId;
+        if (!userId || isLegacyUserId(userId)) return;
         if (
           get().memberships.some(
             (membership) =>
@@ -131,6 +128,8 @@ export const useCollaborationStore = create<CollaborationStore>()(
           new Set(collectionIds.filter(Boolean)),
         );
         if (uniqueIds.length === 0) return;
+        const ownerId = get().activeUserId;
+        if (!ownerId || isLegacyUserId(ownerId)) return;
         set((state) => {
           const existingCollectionIds = new Set(
             state.memberships.map(
@@ -146,13 +145,124 @@ export const useCollaborationStore = create<CollaborationStore>()(
             memberships: [
               ...state.memberships,
               ...missing.map((collectionId) => ({
-                id: `membership-${collectionId}-${DEFAULT_OWNER.id}`,
+                id: `membership-${collectionId}-${ownerId}`,
                 collectionId,
-                userId: DEFAULT_OWNER.id,
+                userId: ownerId,
                 role: "owner" as const,
-                joinedAt: "2026-01-01T00:00:00.000Z",
+                joinedAt: new Date().toISOString(),
               })),
             ],
+          };
+        });
+      },
+
+      adoptCanonicalIdentity: (input) => {
+        const canonicalUserId = input.userId;
+        if (!canonicalUserId || isLegacyUserId(canonicalUserId)) return;
+        const partnerUserId =
+          input.partnerUserId &&
+          input.partnerUserId !== canonicalUserId &&
+          !isLegacyUserId(input.partnerUserId)
+            ? input.partnerUserId
+            : null;
+
+        set((state) => {
+          const mapId = (id: string) =>
+            remapUserId(id, canonicalUserId, partnerUserId);
+
+          const asUser: User = {
+            id: canonicalUserId,
+            name: input.displayName,
+            email: input.email ?? undefined,
+            avatarUrl: input.avatarUrl ?? undefined,
+            color: input.color,
+          };
+
+          const usersById = new Map<string, User>();
+          for (const user of state.users) {
+            const nextId = mapId(user.id);
+            if (!nextId) continue;
+            const existing = usersById.get(nextId);
+            usersById.set(nextId, {
+              ...user,
+              ...existing,
+              id: nextId,
+              ...(nextId === canonicalUserId ? asUser : {}),
+            });
+          }
+          usersById.set(canonicalUserId, {
+            ...usersById.get(canonicalUserId),
+            ...asUser,
+          });
+
+          // Ensure seed collections are owned by the authenticated user.
+          const memberships: CollectionMembership[] = [];
+          const seen = new Set<string>();
+          for (const membership of state.memberships) {
+            const nextUserId = mapId(membership.userId);
+            if (!nextUserId) continue;
+            const key = `${membership.collectionId}\u001f${nextUserId}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            memberships.push({
+              ...membership,
+              id: `membership-${membership.collectionId}-${nextUserId}`,
+              userId: nextUserId,
+            });
+          }
+          for (const collectionId of SEED_COLLECTION_IDS) {
+            const key = `${collectionId}\u001f${canonicalUserId}`;
+            if (seen.has(key)) continue;
+            seen.add(key);
+            memberships.push({
+              id: `membership-${collectionId}-${canonicalUserId}`,
+              collectionId,
+              userId: canonicalUserId,
+              role: "owner",
+              joinedAt: new Date().toISOString(),
+            });
+          }
+
+          const invitations: Invitation[] = [];
+          for (const invitation of state.invitations) {
+            const invitedByUserId = mapId(invitation.invitedByUserId);
+            if (!invitedByUserId) continue;
+            let acceptedByUserId = invitation.acceptedByUserId;
+            if (invitation.acceptedByUserId) {
+              const mapped = mapId(invitation.acceptedByUserId);
+              if (!mapped) continue;
+              acceptedByUserId = mapped;
+            }
+            invitations.push({
+              ...invitation,
+              invitedByUserId,
+              acceptedByUserId,
+            });
+          }
+
+          const notifications: AppNotification[] = [];
+          for (const notification of state.notifications) {
+            const userId = mapId(notification.userId);
+            if (!userId) continue;
+            notifications.push({ ...notification, userId });
+          }
+
+          const activity: CollectionActivity[] = [];
+          for (const entry of state.activity) {
+            const userId = mapId(entry.userId);
+            if (!userId) continue;
+            activity.push({ ...entry, userId });
+          }
+
+          return {
+            users: Array.from(usersById.values()).filter(
+              (user) => !isLegacyUserId(user.id),
+            ),
+            memberships,
+            invitations,
+            notifications,
+            activity,
+            activeUserId: canonicalUserId,
           };
         });
       },
@@ -224,9 +334,9 @@ export const useCollaborationStore = create<CollaborationStore>()(
             entry.id === invitation.id
               ? {
                   ...entry,
-                  status: "accepted",
-                  acceptedAt,
+                  status: "accepted" as const,
                   acceptedByUserId: user.id,
+                  acceptedAt,
                 }
               : entry,
           ),
@@ -281,22 +391,22 @@ export const useCollaborationStore = create<CollaborationStore>()(
           }
           return {
             activity: [
-            {
-              id: createId("activity"),
-              collectionId: input.collectionId,
-              userId: input.userId,
-              type: input.type,
-              movieId: input.movieId,
-              occurredAt: new Date().toISOString(),
-            },
-            ...state.activity,
-          ].slice(0, 200),
+              {
+                id: createId("activity"),
+                collectionId: input.collectionId,
+                userId: input.userId,
+                type: input.type,
+                movieId: input.movieId,
+                occurredAt: new Date().toISOString(),
+              },
+              ...state.activity,
+            ].slice(0, 200),
           };
         }),
     }),
     {
       name: "decision-collaboration",
-      version: 1,
+      version: 2,
       partialize: (state) => ({
         users: state.users,
         memberships: state.memberships,
@@ -305,7 +415,7 @@ export const useCollaborationStore = create<CollaborationStore>()(
         activity: state.activity,
         activeUserId: state.activeUserId,
       }),
-      migrate: (persisted) => {
+      migrate: (persisted, version) => {
         const data = (persisted ?? {}) as Partial<CollaborationStore>;
         const colors = [
           "#e50914",
@@ -313,44 +423,64 @@ export const useCollaborationStore = create<CollaborationStore>()(
           "#0ea5e9",
           "#10b981",
         ];
+        // v2: strip username memberships. Auth adoptCanonicalIdentity
+        // rewrites remaining legacy rows and owns seed collections after login.
+        const memberships =
+          version < 2
+            ? (data.memberships ?? []).filter(
+                (m) => m && !isLegacyUserId(m.userId),
+              )
+            : data.memberships?.length
+              ? data.memberships
+              : seedMemberships();
+
+        const users = (data.users?.length ? data.users : [])
+          .filter((user) => user && !isLegacyUserId(user.id))
+          .map((user, index) => ({
+            ...user,
+            color: user.color ?? colors[index % colors.length],
+          }));
+
+        const activeUserId =
+          data.activeUserId && !isLegacyUserId(data.activeUserId)
+            ? data.activeUserId
+            : "";
+
         return {
           ...data,
-          users: (data.users?.length ? data.users : DEFAULT_USERS).map(
-            (user, index) => ({
-              ...user,
-              color: user.color ?? colors[index % colors.length],
-            }),
-          ),
-          memberships:
-            data.memberships?.length
-              ? data.memberships
-              : seedMemberships(),
+          users,
+          memberships,
           invitations: data.invitations ?? [],
           notifications: data.notifications ?? [],
           activity: data.activity ?? [],
-          activeUserId:
-            data.activeUserId ?? DEFAULT_OWNER.id,
+          activeUserId,
         };
       },
       merge: (persisted, current) => {
         const data = (persisted ?? {}) as Partial<CollaborationStore>;
+        const users = (data.users?.length ? data.users : current.users).filter(
+          (user) => !isLegacyUserId(user.id),
+        );
+        const memberships = (
+          data.memberships?.length ? data.memberships : current.memberships
+        ).filter((membership) => !isLegacyUserId(membership.userId));
+        const activeUserId =
+          data.activeUserId &&
+          !isLegacyUserId(data.activeUserId) &&
+          users.some((user) => user.id === data.activeUserId)
+            ? data.activeUserId
+            : current.activeUserId && !isLegacyUserId(current.activeUserId)
+              ? current.activeUserId
+              : "";
         return {
           ...current,
           ...data,
-          users: data.users?.length ? data.users : current.users,
-          memberships: data.memberships?.length
-            ? data.memberships
-            : current.memberships,
+          users,
+          memberships,
           invitations: data.invitations ?? current.invitations,
           notifications: data.notifications ?? current.notifications,
           activity: data.activity ?? current.activity,
-          activeUserId:
-            data.activeUserId &&
-            (data.users ?? current.users).some(
-              (user) => user.id === data.activeUserId,
-            )
-              ? data.activeUserId
-              : current.activeUserId,
+          activeUserId,
         };
       },
     },

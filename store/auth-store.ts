@@ -70,20 +70,15 @@ const EMPTY_PARTNER: PartnerSnapshot = {
 
 function syncActiveUser(profile: UserProfile | null) {
   if (!profile) return;
-  const collab = useCollaborationStore.getState();
-  const asUser = {
-    id: profile.id,
-    name: profile.displayName,
-    email: profile.email ?? undefined,
-    avatarUrl: profile.avatarUrl ?? undefined,
+  const partnerUserId =
+    useAuthStore.getState().partner.partner?.id ?? null;
+  useCollaborationStore.getState().adoptCanonicalIdentity({
+    userId: profile.id,
+    displayName: profile.displayName,
+    email: profile.email,
+    avatarUrl: profile.avatarUrl,
     color: profile.color,
-  };
-  const users = collab.users.some((u) => u.id === profile.id)
-    ? collab.users.map((u) => (u.id === profile.id ? { ...u, ...asUser } : u))
-    : [...collab.users, asUser];
-  useCollaborationStore.setState({
-    users,
-    activeUserId: profile.id,
+    partnerUserId,
   });
 }
 
@@ -304,6 +299,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
     const partner = await relationshipService.getSnapshot(profile.id);
     set({ partner });
+    syncActiveUser(profile);
   },
 
   invitePartner: async () => {

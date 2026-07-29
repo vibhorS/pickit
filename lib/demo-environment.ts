@@ -8,11 +8,7 @@ import type {
   Invitation,
   Rating,
 } from "@/lib/types";
-import {
-  DEFAULT_COLLABORATOR,
-  DEFAULT_OWNER,
-  DEFAULT_USERS,
-} from "@/lib/users";
+import { useAuthStore } from "@/store/auth-store";
 import { useCaptureStore } from "@/store/capture-store";
 import {
   SEED_COLLECTION_IDS,
@@ -23,6 +19,16 @@ import { useSessionStore } from "@/store/session-store";
 import { useVoteStore } from "@/store/vote-store";
 
 const DEMO_JOINED_AT = "2026-01-01T00:00:00.000Z";
+
+function requireCanonicalOwnerId(): string {
+  const profileId = useAuthStore.getState().profile?.id;
+  const activeId = useCollaborationStore.getState().activeUserId;
+  const ownerId = profileId || activeId;
+  if (!ownerId) {
+    throw new Error("Sign in before seeding demo data (canonical auth UUID required).");
+  }
+  return ownerId;
+}
 
 function membership(
   collectionId: string,
@@ -39,81 +45,66 @@ function membership(
 }
 
 export function seedDemoCouple() {
-  useCollaborationStore.setState((state) => ({
-    users: DEFAULT_USERS,
-    activeUserId: DEFAULT_OWNER.id,
-    memberships: state.memberships.filter((entry) =>
-      DEFAULT_USERS.some((user) => user.id === entry.userId),
-    ),
-    invitations: state.invitations.filter(
-      (invitation) =>
-        DEFAULT_USERS.some(
-          (user) => user.id === invitation.invitedByUserId,
-        ) &&
-        (!invitation.acceptedByUserId ||
-          DEFAULT_USERS.some(
-            (user) =>
-              user.id === invitation.acceptedByUserId,
-          )),
-    ),
-    notifications: state.notifications.filter((notification) =>
-      DEFAULT_USERS.some(
-        (user) => user.id === notification.userId,
-      ),
-    ),
-    activity: state.activity.filter((entry) =>
-      DEFAULT_USERS.some((user) => user.id === entry.userId),
-    ),
-  }));
+  const ownerId = requireCanonicalOwnerId();
+  const profile = useAuthStore.getState().profile!;
+  useCollaborationStore.getState().adoptCanonicalIdentity({
+    userId: ownerId,
+    displayName: profile.displayName,
+    email: profile.email,
+    avatarUrl: profile.avatarUrl,
+    color: profile.color,
+    partnerUserId: useAuthStore.getState().partner.partner?.id ?? null,
+  });
 }
 
 export function seedDemoLists() {
+  const ownerId = requireCanonicalOwnerId();
   const previous = useCollaborationStore.getState();
   const customMemberships = previous.memberships.filter(
     (entry) =>
       !SEED_COLLECTION_IDS.includes(entry.collectionId) &&
-      DEFAULT_USERS.some((user) => user.id === entry.userId),
+      entry.userId === ownerId,
   );
   const memberships: CollectionMembership[] = [
-    membership("date-night", DEFAULT_OWNER.id, "owner"),
-    membership("date-night", DEFAULT_COLLABORATOR.id, "member"),
-    membership("sci-fi", DEFAULT_OWNER.id, "owner"),
-    membership("comfort-movies", DEFAULT_OWNER.id, "owner"),
+    membership("date-night", ownerId, "owner"),
+    membership("sci-fi", ownerId, "owner"),
+    membership("comfort-movies", ownerId, "owner"),
     ...customMemberships,
   ];
   const pendingInvitation: Invitation = {
     id: "demo-invitation-sci-fi",
     collectionId: "sci-fi",
-    invitedByUserId: DEFAULT_OWNER.id,
+    invitedByUserId: ownerId,
     token: "demo-join-sci-fi",
     status: "pending",
     createdAt: DEMO_JOINED_AT,
   };
 
   useCollaborationStore.setState({
-    users: DEFAULT_USERS,
-    activeUserId: DEFAULT_OWNER.id,
+    activeUserId: ownerId,
     memberships,
     invitations: [
       pendingInvitation,
       ...previous.invitations.filter(
         (invitation) =>
-          !SEED_COLLECTION_IDS.includes(
-            invitation.collectionId,
-          ),
+          !SEED_COLLECTION_IDS.includes(invitation.collectionId),
       ),
     ],
-    notifications: previous.notifications,
-    activity: previous.activity,
   });
 }
 
 export function seedDemoRatings() {
-  useVoteStore.getState().replaceVotes(developmentSeedRatings);
+  const ownerId = requireCanonicalOwnerId();
+  const remapped = developmentSeedRatings.map((rating) => ({
+    ...rating,
+    userId: ownerId,
+  }));
+  useVoteStore.getState().replaceVotes(remapped);
   useSessionStore.getState().clearCurrentSession();
 }
 
 export function seedDemoRecommendations() {
+  const ownerId = requireCanonicalOwnerId();
   const byCollection = {
     ...useLocalCollectionStore.getState().byCollection,
   };
@@ -122,10 +113,7 @@ export function seedDemoRecommendations() {
       .getCollectionMovies(collection.items)
       .map((item, index) => ({
         ...item,
-        addedByUserId:
-          collection.id !== "date-night" || index % 2 === 0
-            ? DEFAULT_OWNER.id
-            : DEFAULT_COLLABORATOR.id,
+        addedByUserId: ownerId,
         addedAt:
           item.metadata?.savedAt ??
           new Date(
@@ -147,31 +135,23 @@ export function seedDemoRecommendations() {
 
 export function seedReadyMovieNight() {
   seedDemoLists();
+  const ownerId = requireCanonicalOwnerId();
   const collection = collectionService.getById("date-night");
   if (!collection) return;
   const items = movieService.getCollectionMovies(collection.items);
-  const readyRatings: Rating[] = items.flatMap((item, index) => {
+  const readyRatings: Rating[] = items.map((item, index) => {
     const vote = index < 3 ? "like" : "pass";
-    return [
-      {
-        collectionId: collection.id,
-        movieId: item.movie.id,
-        userId: DEFAULT_OWNER.id,
-        vote,
-        votedAt: new Date("2026-07-19T12:00:00.000Z"),
-      },
-      {
-        collectionId: collection.id,
-        movieId: item.movie.id,
-        userId: DEFAULT_COLLABORATOR.id,
-        vote,
-        votedAt: new Date("2026-07-19T12:05:00.000Z"),
-      },
-    ];
+    return {
+      collectionId: collection.id,
+      movieId: item.movie.id,
+      userId: ownerId,
+      vote,
+      votedAt: new Date("2026-07-19T12:00:00.000Z"),
+    };
   });
-  const otherRatings = developmentSeedRatings.filter(
-    (rating) => rating.collectionId !== collection.id,
-  );
+  const otherRatings = developmentSeedRatings
+    .filter((rating) => rating.collectionId !== collection.id)
+    .map((rating) => ({ ...rating, userId: ownerId }));
   useVoteStore
     .getState()
     .replaceVotes([...otherRatings, ...readyRatings]);

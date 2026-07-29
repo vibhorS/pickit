@@ -3,9 +3,9 @@ import { persist } from "zustand/middleware";
 import { developmentSeedRatings } from "@/lib/development-seed-ratings";
 import { createMovieVote } from "@/lib/vote-status";
 import {
-  DEFAULT_COLLABORATOR,
-  DEFAULT_OWNER,
-} from "@/lib/users";
+  isLegacyUserId,
+  remapUserId,
+} from "@/lib/identity/canonical-user-id";
 import type { MovieVote, VoteValue } from "@/lib/types";
 import { useCollaborationStore } from "@/store/collaboration-store";
 
@@ -27,17 +27,28 @@ type VoteStore = {
   mergeVotes: (cloudVotes: MovieVote[]) => void;
 };
 
+function resolveCanonicalOwnerId(): string {
+  return useCollaborationStore.getState().activeUserId;
+}
+
 function reviveVotes(votes: MovieVote[]): MovieVote[] {
-  return votes.map((vote) => ({
-    ...vote,
-    userId:
-      vote.userId === "you"
-        ? DEFAULT_OWNER.id
-        : vote.userId === "partner"
-          ? DEFAULT_COLLABORATOR.id
-          : vote.userId ?? DEFAULT_OWNER.id,
-    votedAt: new Date(vote.votedAt),
-  }));
+  const ownerId = resolveCanonicalOwnerId();
+  return votes
+    .map((vote) => {
+      const raw = vote.userId ?? "you";
+      const remapped = ownerId
+        ? remapUserId(raw, ownerId, null)
+        : isLegacyUserId(raw) || raw === "you" || raw === "partner"
+          ? null
+          : raw;
+      if (!remapped) return null;
+      return {
+        ...vote,
+        userId: remapped,
+        votedAt: new Date(vote.votedAt),
+      };
+    })
+    .filter((vote): vote is MovieVote => vote != null);
 }
 
 function mergeRatings(ratings: MovieVote[]): MovieVote[] {
@@ -270,7 +281,7 @@ export const useVoteStore = create<VoteStore>()(
         if (version >= 1) return { votes: revived };
 
         const collaboratorSeeds = developmentSeedRatings.filter(
-          (rating) => rating.userId === DEFAULT_COLLABORATOR.id,
+          (rating) => !isLegacyUserId(rating.userId),
         );
         return {
           votes: mergeRatings([...collaboratorSeeds, ...revived]),

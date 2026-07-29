@@ -14,6 +14,10 @@ import type {
   UserProfile,
 } from "@/lib/types";
 import { userToProfile } from "@/lib/types";
+import {
+  isLegacyUserId,
+  remapUserId,
+} from "@/lib/identity/canonical-user-id";
 
 const LEGACY_KEYS = {
   collaboration: "decision-collaboration",
@@ -90,7 +94,9 @@ export async function migrateLocalDataToCloudRepos(): Promise<{
   // Fresh installs stay signed out so the auth gate can run.
   let profile = await authenticationService.restoreSession();
   if (!profile) {
-    const legacyUsers = legacyCollab?.users ?? [];
+    const legacyUsers = (legacyCollab?.users ?? []).filter(
+      (u) => !isLegacyUserId(u.id),
+    );
     const active =
       legacyUsers.find((u) => u.id === legacyCollab?.activeUserId) ??
       legacyUsers[0];
@@ -114,8 +120,9 @@ export async function migrateLocalDataToCloudRepos(): Promise<{
     return { migrated: true, userId: null };
   }
 
-  // Users
+  // Users — skip legacy username identities
   for (const user of legacyCollab?.users ?? []) {
+    if (isLegacyUserId(user.id)) continue;
     const existing = await repos.users.getById(user.id);
     if (!existing) {
       await repos.users.upsert(
@@ -198,33 +205,42 @@ export async function migrateLocalDataToCloudRepos(): Promise<{
     });
   }
 
-  // Memberships
+  // Memberships — rewrite legacy usernames onto the authenticated profile id
   for (const membership of legacyCollab?.memberships ?? []) {
+    const userId = remapUserId(membership.userId, profile.id, null);
+    if (!userId) continue;
     await repos.memberships.upsert({
       ...membership,
+      id: `membership-${membership.collectionId}-${userId}`,
+      userId,
       role:
         membership.role === "owner"
           ? "owner"
           : membership.role === "partner"
             ? "partner"
             : "member",
-      ...stampCreate(membership.userId, membership.joinedAt),
+      ...stampCreate(userId, membership.joinedAt),
     });
   }
 
   // Ratings
   for (const vote of legacyVotes?.votes ?? []) {
+    const remappedUserId = remapUserId(
+      vote.userId === "you" || vote.userId === "partner"
+        ? vote.userId
+        : vote.userId,
+      profile.id,
+      null,
+    );
+    if (!remappedUserId) continue;
     const rating: MovieVote = {
       collectionId: vote.collectionId,
       movieId: vote.movieId,
-      userId: vote.userId === "you" ? profile.id : vote.userId === "partner"
-        ? (legacyCollab?.users?.find((u) => u.id !== profile.id)?.id ??
-          vote.userId)
-        : vote.userId,
+      userId: remappedUserId,
       vote: vote.vote,
       votedAt: new Date(vote.votedAt),
-      createdBy: vote.userId,
-      updatedBy: vote.userId,
+      createdBy: remappedUserId,
+      updatedBy: remappedUserId,
       createdAt: new Date(vote.votedAt).toISOString(),
       updatedAt: new Date(vote.votedAt).toISOString(),
       deletedAt: null,

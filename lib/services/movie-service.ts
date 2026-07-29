@@ -9,7 +9,6 @@ import {
   tmdbService,
   type TmdbSearchMovie,
 } from "@/lib/services/tmdb-service";
-import { DEFAULT_OWNER } from "@/lib/users";
 
 export type CollectionMovie = {
   movie: Movie;
@@ -57,7 +56,7 @@ export const movieService = {
           movie,
           source: item.source,
           metadata: item.metadata,
-          addedByUserId: item.addedByUserId ?? DEFAULT_OWNER.id,
+          addedByUserId: item.addedByUserId ?? "",
           addedAt:
             item.addedAt ??
             item.metadata?.savedAt ??
@@ -81,7 +80,7 @@ export const movieService = {
       movie,
       source: item.source,
       metadata: item.metadata,
-      addedByUserId: item.addedByUserId ?? DEFAULT_OWNER.id,
+      addedByUserId: item.addedByUserId ?? "",
       addedAt:
         item.addedAt ??
         item.metadata?.savedAt ??

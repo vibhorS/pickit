@@ -9,7 +9,6 @@ import type {
   RecommendationMetadata,
   RecommendationSource,
 } from "@/lib/types";
-import { DEFAULT_OWNER } from "@/lib/users";
 import { useCollaborationStore } from "@/store/collaboration-store";
 import { useCrewStore } from "@/store/crew-store";
 import { useAuthStore } from "@/store/auth-store";
@@ -164,22 +163,124 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
           collectionIds,
         });
         const collaboration = useCollaborationStore.getState();
-        const uniqueIds = Array.from(
-          new Set(collectionIds.filter(Boolean)),
-        ).filter((collectionId) => {
-          const memberships = collaboration.memberships.filter(
-            (membership) =>
-              membership.collectionId === collectionId,
+
+        // --- uniqueIds construction pipeline (diagnostics only) ---
+        savePathDebug.branch(
+          "uniqueIds pipeline: collectionIds input",
+          "entered",
+          `INPUT collectionIds=${JSON.stringify(collectionIds)}`,
+        );
+
+        const afterBoolean = collectionIds.filter(Boolean);
+        savePathDebug.branch(
+          "uniqueIds pipeline: filter(Boolean)",
+          "passed",
+          `INPUT=${JSON.stringify(collectionIds)} → OUTPUT=${JSON.stringify(afterBoolean)} · REASON: drop falsy ids`,
+        );
+
+        const afterUnique = Array.from(new Set(afterBoolean));
+        savePathDebug.branch(
+          "uniqueIds pipeline: new Set (dedupe)",
+          "passed",
+          `INPUT=${JSON.stringify(afterBoolean)} → OUTPUT=${JSON.stringify(afterUnique)} · REASON: unique collection ids`,
+        );
+
+        const membershipRejects: Array<{
+          collectionId: string;
+          membershipsForCollection: Array<{
+            id: string;
+            userId: string;
+            role: string;
+          }>;
+          activeUserId: string;
+          reason: string;
+        }> = [];
+
+        const uniqueIds = afterUnique.filter((collectionId) => {
+          const membershipsForCollection = collaboration.memberships.filter(
+            (membership) => membership.collectionId === collectionId,
           );
-          if (memberships.length === 0) {
+
+          savePathDebug.branch(
+            `uniqueIds pipeline: membership lookup for "${collectionId}"`,
+            "await",
+            `DATA STRUCTURE: collaboration.memberships (${collaboration.memberships.length} total) · FILTER: membership.collectionId === "${collectionId}" · OUTPUT count=${membershipsForCollection.length} · rows=${JSON.stringify(
+              membershipsForCollection.map((m) => ({
+                id: m.id,
+                userId: m.userId,
+                role: m.role,
+              })),
+            )} · activeUserId=${collaboration.activeUserId}`,
+          );
+
+          if (membershipsForCollection.length === 0) {
             collaboration.ensureOwner(collectionId);
+            savePathDebug.branch(
+              `uniqueIds pipeline: keep "${collectionId}"`,
+              "passed",
+              `INPUT memberships=[] → OUTPUT keep=true · REASON: no memberships → ensureOwner(${collectionId}) then return true`,
+            );
             return true;
           }
-          return memberships.some(
+
+          const activeIsMember = membershipsForCollection.some(
             (membership) =>
               membership.userId === collaboration.activeUserId,
           );
+
+          if (!activeIsMember) {
+            const reject = {
+              collectionId,
+              membershipsForCollection: membershipsForCollection.map((m) => ({
+                id: m.id,
+                userId: m.userId,
+                role: m.role,
+              })),
+              activeUserId: collaboration.activeUserId,
+              reason: `REJECTED: memberships exist for "${collectionId}" but none have userId === activeUserId ("${collaboration.activeUserId}"). ensureOwner was NOT called because memberships.length > 0. This is NOT a "movie already present" check — that runs later on added/already.`,
+            };
+            membershipRejects.push(reject);
+            savePathDebug.branch(
+              `uniqueIds pipeline: filter REMOVE "${collectionId}"`,
+              "failed",
+              `INPUT memberships=${JSON.stringify(reject.membershipsForCollection)} activeUserId=${reject.activeUserId} → OUTPUT keep=false · REASON: ${reject.reason}`,
+            );
+            return false;
+          }
+
+          savePathDebug.branch(
+            `uniqueIds pipeline: filter KEEP "${collectionId}"`,
+            "passed",
+            `INPUT memberships include activeUserId=${collaboration.activeUserId} → OUTPUT keep=true · REASON: memberships.some(m => m.userId === activeUserId)`,
+          );
+          return true;
         });
+
+        savePathDebug.branch(
+          "uniqueIds pipeline: final uniqueIds",
+          uniqueIds.length > 0 ? "passed" : "failed",
+          `INPUT after dedupe=${JSON.stringify(afterUnique)} → OUTPUT uniqueIds=${JSON.stringify(uniqueIds)} · rejects=${JSON.stringify(membershipRejects)} · NOTE: movie-already-present is NOT consulted at this stage`,
+        );
+
+        if (uniqueIds.length === 0 && afterUnique.length > 0) {
+          savePathDebug.exit({
+            reason: `uniqueIds became [] at membership filter: ${membershipRejects.map((r) => r.reason).join(" | ") || "all collections rejected"}`,
+            file: FILE,
+            functionName: FN,
+            line: 249,
+            kind: "return",
+            returnValue: {
+              collectionIds,
+              afterBoolean,
+              afterUnique,
+              uniqueIds,
+              activeUserId: collaboration.activeUserId,
+              membershipRejects,
+              consulted: "useCollaborationStore.memberships + activeUserId",
+            },
+          });
+        }
+
         const added: string[] = [];
         const already: string[] = [];
 
@@ -191,17 +292,19 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
 
         if (!movie?.id || uniqueIds.length === 0) {
           const returnValue = { added, already };
-          savePathDebug.exit({
-            reason:
-              !movie?.id
-                ? "EARLY_RETURN: movie.id missing — cloud upsert never scheduled"
-                : "EARLY_RETURN: uniqueIds empty after membership filter — cloud upsert never scheduled",
-            file: FILE,
-            functionName: FN,
-            line: 178,
-            kind: "return",
-            returnValue,
-          });
+          if (!savePathDebug.snapshot().firstExit) {
+            savePathDebug.exit({
+              reason:
+                !movie?.id
+                  ? "EARLY_RETURN: movie.id missing — cloud upsert never scheduled"
+                  : "EARLY_RETURN: uniqueIds empty after membership filter — cloud upsert never scheduled",
+              file: FILE,
+              functionName: FN,
+              line: 192,
+              kind: "return",
+              returnValue,
+            });
+          }
           return returnValue;
         }
         const recommendationMetadata = withSavedTimestamp(
@@ -966,7 +1069,8 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
               items.map((item) => ({
                 ...item,
                 addedByUserId:
-                  item.addedByUserId ?? DEFAULT_OWNER.id,
+                  item.addedByUserId ??
+                    useCollaborationStore.getState().activeUserId,
                 addedAt:
                   item.addedAt ??
                   item.metadata?.savedAt ??
@@ -986,7 +1090,8 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
             (capture) => ({
               ...capture,
               capturedByUserId:
-                capture.capturedByUserId ?? DEFAULT_OWNER.id,
+                capture.capturedByUserId ??
+                  useCollaborationStore.getState().activeUserId,
             }),
           ),
         };

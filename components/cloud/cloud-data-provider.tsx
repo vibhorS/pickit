@@ -10,6 +10,7 @@ import {
 } from "@/lib/services/cloud/migration";
 import { crewService } from "@/lib/services/crew/crew-service";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { isLegacyUserId } from "@/lib/identity/canonical-user-id";
 import { cloudSyncEngine } from "@/lib/sync/cloud-sync-engine";
 import { logger } from "@/lib/observability/logger";
 import { useAuthStore } from "@/store/auth-store";
@@ -281,13 +282,29 @@ function mergeCloudSnapshot(userId: string, snapshot: CloudSnapshot) {
       }
     }
     return {
-      users: Array.from(byId.values()),
+      users: Array.from(byId.values()).filter(
+        (user) => !isLegacyUserId(user.id),
+      ),
       activeUserId: userId,
       memberships: snapshot.memberships.length
         ? snapshot.memberships
-        : state.memberships,
+        : state.memberships.filter(
+            (membership) => !isLegacyUserId(membership.userId),
+          ),
     };
   });
+
+  const profile = useAuthStore.getState().profile;
+  if (profile) {
+    useCollaborationStore.getState().adoptCanonicalIdentity({
+      userId: profile.id,
+      displayName: profile.displayName,
+      email: profile.email,
+      avatarUrl: profile.avatarUrl,
+      color: profile.color,
+      partnerUserId: useAuthStore.getState().partner.partner?.id ?? null,
+    });
+  }
 }
 
 async function refreshFromCloud(
