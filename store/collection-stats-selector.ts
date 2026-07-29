@@ -6,6 +6,7 @@ import {
   movieService,
   type CollectionMovie,
 } from "@/lib/services/movie-service";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import type {
   Collection,
   CollectionMembership,
@@ -120,9 +121,11 @@ function deriveCollectionStats(
   collectionId: string,
   input: CollectionStatsInput,
 ): CollectionStats {
+  const cloudMode = isSupabaseConfigured();
+  // Metadata only — never read collection.items for movie rows in cloud mode.
   const baseCollection =
-    collectionService.getById(collectionId) ??
-    input.createdCollections.find((entry) => entry.id === collectionId);
+    input.createdCollections.find((entry) => entry.id === collectionId) ??
+    (cloudMode ? undefined : collectionService.getById(collectionId));
   const override = input.collectionOverrides[collectionId];
   const collection =
     baseCollection && !override?.deleted
@@ -132,12 +135,15 @@ function deriveCollectionStats(
           emoji: override?.emoji ?? baseCollection.emoji,
         }
       : undefined;
-  const seedItems = collection
-    ? movieService.getCollectionMovies(collection.items)
-    : EMPTY_LOCAL_ITEMS;
-  const localItems = collection
-    ? input.byCollection[collectionId] ?? EMPTY_LOCAL_ITEMS
-    : EMPTY_LOCAL_ITEMS;
+
+  // Cloud read model: byCollection (hydrated from lists + recommendations + movies).
+  // Local/offline only: optionally resolve mock seed items via movieService.
+  const seedItems =
+    !cloudMode && collection
+      ? movieService.getCollectionMovies(collection.items)
+      : EMPTY_LOCAL_ITEMS;
+  const localItems =
+    input.byCollection[collectionId] ?? EMPTY_LOCAL_ITEMS;
   const items = mergeCollectionItems(
     seedItems,
     localItems,

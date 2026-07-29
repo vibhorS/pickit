@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { RateSession } from "@/components/rate/rate-session";
 import { EmptyState } from "@/components/ui/empty-state";
 import { MovieDetailSkeleton } from "@/components/ui/skeleton";
 import type { CollectionMovie } from "@/lib/services/movie-service";
+import { movieService } from "@/lib/services/movie-service";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import type { Collection } from "@/lib/types";
 import {
   EMPTY_CREATED_COLLECTIONS,
@@ -15,13 +17,13 @@ import {
 type RateSessionResolverProps = {
   collectionId: string;
   seedCollection: Collection | null;
+  /** @deprecated Ignored in cloud mode; local mode may pass [] and resolve from seed. */
   seedItems: CollectionMovie[];
 };
 
 export function RateSessionResolver({
   collectionId,
   seedCollection,
-  seedItems,
 }: RateSessionResolverProps) {
   const [hydrated, setHydrated] = useState(false);
   const createdCollections = useLocalCollectionStore(
@@ -41,8 +43,6 @@ export function RateSessionResolver({
     return unsubscribe;
   }, []);
 
-  if (!hydrated) return <MovieDetailSkeleton />;
-
   const baseCollection =
     seedCollection ??
     (createdCollections ?? EMPTY_CREATED_COLLECTIONS).find(
@@ -56,6 +56,15 @@ export function RateSessionResolver({
           emoji: collectionOverride?.emoji ?? baseCollection.emoji,
         }
       : undefined;
+
+  // Cloud: empty seed — RateSession reads byCollection only.
+  // Local/offline: resolve mock seed items for demo collections.
+  const localSeedItems = useMemo(() => {
+    if (isSupabaseConfigured() || !collection) return [];
+    return movieService.getCollectionMovies(collection.items);
+  }, [collection]);
+
+  if (!hydrated) return <MovieDetailSkeleton />;
 
   if (!collection) {
     return (
@@ -72,5 +81,5 @@ export function RateSessionResolver({
     );
   }
 
-  return <RateSession collection={collection} items={seedItems} />;
+  return <RateSession collection={collection} items={localSeedItems} />;
 }

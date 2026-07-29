@@ -1,3 +1,9 @@
+/**
+ * Mock seed collection catalog (date-night, sci-fi, …).
+ *
+ * Production cloud mode never merges these into the UI catalog
+ * (see resolveCollectionCatalog). Demo / local-offline only.
+ */
 import { collections } from "@/lib/mock-collections";
 import type { Collection } from "@/lib/types";
 

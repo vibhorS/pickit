@@ -262,6 +262,11 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
           `INPUT after dedupe=${JSON.stringify(afterUnique)} → OUTPUT uniqueIds=${JSON.stringify(uniqueIds)} · rejects=${JSON.stringify(membershipRejects)} · NOTE: movie-already-present is NOT consulted at this stage`,
         );
 
+        savePathDebug.patchCollectionPipeline({
+          afterCreateResolve: afterUnique,
+          afterMembershipFilter: uniqueIds,
+        });
+
         if (uniqueIds.length === 0 && afterUnique.length > 0) {
           savePathDebug.exit({
             reason: `uniqueIds became [] at membership filter: ${membershipRejects.map((r) => r.reason).join(" | ") || "all collections rejected"}`,
@@ -394,6 +399,12 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
           added.length > 0 ? "passed" : "failed",
           `added=${JSON.stringify(added)} already=${JSON.stringify(already)}`,
         );
+
+        savePathDebug.patchCollectionPipeline({
+          afterMembershipFilter: uniqueIds,
+          added,
+          already,
+        });
 
         if (added.length === 0) {
           console.error(
@@ -738,10 +749,11 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                     );
                     // Stages 4–9 are asserted inside CloudRecommendationRepository.upsert
                     const saved = await repos.recommendations.upsert(rec);
+                    savePathDebug.markListIdWritten(saved.listId);
                     savePathDebug.branch(
                       "repos.recommendations.upsert returned",
                       "passed",
-                      `saved.id=${saved.id}`,
+                      `saved.id=${saved.id} listId=${saved.listId}`,
                     );
                     trace.supabaseResponse = {
                       id: saved.id,

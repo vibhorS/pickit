@@ -6,14 +6,12 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { FadeIn } from "@/components/ui/fade-in";
+import { resolveCollectionCatalog } from "@/lib/collections/resolve-catalog";
 import { collectionService } from "@/lib/services/collection-service";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { MOTION } from "@/lib/motion";
 import { analytics } from "@/lib/observability/analytics";
-import {
-  EMPTY_CREATED_COLLECTIONS,
-  mergeCollections,
-  useLocalCollectionStore,
-} from "@/store/local-collection-store";
+import { useLocalCollectionStore } from "@/store/local-collection-store";
 import { useCollaborationStore } from "@/store/collaboration-store";
 import { useCollectionStatsList } from "@/store/collection-stats-selector";
 
@@ -21,7 +19,9 @@ export function HomeClient() {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
   const [enteringPickMode, setEnteringPickMode] = useState(false);
-  const seedCollections = collectionService.getAll();
+  const seedCollections = isSupabaseConfigured()
+    ? []
+    : collectionService.getAll();
   const createdCollections = useLocalCollectionStore(
     (state) => state.createdCollections,
   );
@@ -32,9 +32,9 @@ export function HomeClient() {
   const activeUserId = useCollaborationStore((state) => state.activeUserId);
 
   const collections = useMemo(() => {
-    const merged = mergeCollections(
+    const merged = resolveCollectionCatalog(
       seedCollections,
-      createdCollections ?? EMPTY_CREATED_COLLECTIONS,
+      createdCollections,
       collectionOverrides,
     );
     return merged.filter((collection) => {
@@ -48,13 +48,21 @@ export function HomeClient() {
         )
       );
     });
-  }, [activeUserId, collectionOverrides, createdCollections, memberships, seedCollections]);
+  }, [
+    activeUserId,
+    collectionOverrides,
+    createdCollections,
+    memberships,
+    seedCollections,
+  ]);
 
   const recentCollections = useMemo(
     () => collections.slice(0, 3),
     [collections],
   );
-  const stats = useCollectionStatsList(recentCollections.map((entry) => entry.id));
+  const stats = useCollectionStatsList(
+    recentCollections.map((entry) => entry.id),
+  );
 
   function enterPickMode() {
     if (enteringPickMode) return;
@@ -117,12 +125,13 @@ export function HomeClient() {
             <div className="mt-3 space-y-3">
               {recentCollections.length === 0 ? (
                 <p className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-netflix-muted">
-                  No collections yet. Capture a screenshot to start your first one.
+                  No collections yet. Capture a screenshot to start your first
+                  one.
                 </p>
               ) : (
                 recentCollections.map((collection, index) => {
                   const stat = stats[index];
-                  const movieCount = stat?.totalMovies ?? collection.items.length;
+                  const movieCount = stat?.totalMovies ?? 0;
                   return (
                     <Link
                       key={collection.id}
@@ -138,12 +147,15 @@ export function HomeClient() {
                         </p>
                       </div>
                       <p className="mt-2 text-sm text-netflix-muted">
-                        {movieCount} movies · {stat?.mutualMatches ?? 0} mutual matches
+                        {movieCount} movies · {stat?.mutualMatches ?? 0} mutual
+                        matches
                       </p>
                       <div className="mt-3 h-2 rounded-full bg-white/[0.08]">
                         <div
                           className="h-full rounded-full bg-netflix-red"
-                          style={{ width: `${Math.max(8, stat?.completionPercent ?? 0)}%` }}
+                          style={{
+                            width: `${Math.max(8, stat?.completionPercent ?? 0)}%`,
+                          }}
                         />
                       </div>
                     </Link>

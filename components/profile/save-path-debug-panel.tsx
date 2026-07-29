@@ -224,6 +224,126 @@ export function SavePathDebugPanel() {
               ) : null}
             </div>
 
+            {snap.collectionPipeline ? (
+              <div className="space-y-2 text-xs">
+                <p className="font-medium text-zinc-400">
+                  Collection ID pipeline
+                </p>
+                <div
+                  className={`rounded-lg border p-3 font-mono text-[10px] ${
+                    snap.collectionPipeline.firstDivergence
+                      ? "border-red-500/40 bg-red-950/30 text-red-200"
+                      : "border-emerald-500/30 bg-emerald-950/20 text-emerald-300"
+                  }`}
+                >
+                  First divergence:{" "}
+                  {snap.collectionPipeline.firstDivergence ?? "NONE"}
+                </div>
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 font-mono text-[10px]">
+                  <dt className="text-zinc-500">selectedCollectionIds</dt>
+                  <dd className="text-zinc-200">
+                    {JSON.stringify(
+                      snap.collectionPipeline.selectedCollectionIds,
+                    )}
+                  </dd>
+                  <dt className="text-zinc-500">createNames</dt>
+                  <dd className="text-zinc-200">
+                    {JSON.stringify(
+                      snap.collectionPipeline.createCollectionNames,
+                    )}
+                  </dd>
+                  <dt className="text-zinc-500">afterCreateResolve</dt>
+                  <dd className="text-zinc-200">
+                    {JSON.stringify(
+                      snap.collectionPipeline.afterCreateResolve,
+                    )}
+                  </dd>
+                  <dt className="text-zinc-500">afterMembershipFilter</dt>
+                  <dd className="text-zinc-200">
+                    {JSON.stringify(
+                      snap.collectionPipeline.afterMembershipFilter,
+                    )}
+                  </dd>
+                  <dt className="text-zinc-500">added</dt>
+                  <dd className="text-zinc-200">
+                    {JSON.stringify(snap.collectionPipeline.added)}
+                  </dd>
+                  <dt className="text-zinc-500">already</dt>
+                  <dd className="text-zinc-200">
+                    {JSON.stringify(snap.collectionPipeline.already)}
+                  </dd>
+                  <dt className="text-zinc-500">list_ids written</dt>
+                  <dd className="text-zinc-200">
+                    {JSON.stringify(snap.collectionPipeline.listIdsWritten)}
+                  </dd>
+                </dl>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-left font-mono text-[10px]">
+                    <thead>
+                      <tr className="text-zinc-500">
+                        <th className="pr-2">name</th>
+                        <th className="pr-2">id</th>
+                        <th className="pr-2">source</th>
+                        <th className="pr-2">sel</th>
+                        <th className="pr-2">memb</th>
+                        <th className="pr-2">added</th>
+                        <th className="pr-2">already</th>
+                        <th>written</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {snap.collectionPipeline.uiSelected.map((ref) => (
+                        <tr
+                          key={ref.collectionId}
+                          className="border-t border-zinc-800 text-zinc-300"
+                        >
+                          <td className="pr-2 py-0.5">{ref.displayName}</td>
+                          <td className="pr-2 py-0.5">
+                            {truncateId(ref.collectionId)}
+                          </td>
+                          <td className="pr-2 py-0.5 text-zinc-500">
+                            {ref.source}
+                          </td>
+                          <td className="pr-2 py-0.5">
+                            {ref.inSelectedIds || ref.inCreateNames
+                              ? "Y"
+                              : "—"}
+                          </td>
+                          <td className="pr-2 py-0.5">
+                            {ref.afterMembershipFilter ? "Y" : "N"}
+                          </td>
+                          <td className="pr-2 py-0.5">
+                            {ref.inAdded ? "Y" : "N"}
+                          </td>
+                          <td className="pr-2 py-0.5">
+                            {ref.inAlready ? "Y" : "N"}
+                          </td>
+                          <td className="py-0.5">
+                            {ref.listIdWritten ? "Y" : "N"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <details>
+                  <summary className="cursor-pointer text-zinc-500">
+                    Home vs Capture catalogs
+                  </summary>
+                  <pre className="mt-1 max-h-40 overflow-auto text-[10px] text-zinc-400">
+                    {JSON.stringify(
+                      {
+                        home: snap.collectionPipeline.homeCatalog,
+                        capture: snap.collectionPipeline.captureCatalog,
+                      },
+                      null,
+                      2,
+                    )}
+                  </pre>
+                </details>
+              </div>
+            ) : null}
+
             <div className="text-xs">
               <p className="mb-1 font-medium text-zinc-400">
                 addMovieToCollections branch flow

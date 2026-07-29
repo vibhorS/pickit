@@ -4,10 +4,10 @@ import { Check, Plus } from "lucide-react";
 import { useMemo, useState } from "react";
 import type { Collection } from "@/lib/types";
 import { useCollectionStatsList } from "@/store/collection-stats-selector";
+import { resolveCollectionCatalog } from "@/lib/collections/resolve-catalog";
 import { useCollaborationStore } from "@/store/collaboration-store";
 import {
   EMPTY_CREATED_COLLECTIONS,
-  mergeCollections,
   useLocalCollectionStore,
 } from "@/store/local-collection-store";
 
@@ -53,7 +53,7 @@ export function CaptureCollectionsStep({
 
   const collections = useMemo(
     () => {
-      const merged = mergeCollections(
+      const merged = resolveCollectionCatalog(
         seedCollections,
         createdCollections ?? EMPTY_CREATED_COLLECTIONS,
         collectionOverrides,

@@ -1,3 +1,11 @@
+/**
+ * Movie helpers backed by lib/mock-data.ts.
+ *
+ * Production / cloud UI must NOT use this for collection rendering.
+ * Use the hydrated byCollection read model (lists + recommendations + movies).
+ *
+ * Allowed: demo tools, local/offline seed resolution, mock capture extraction.
+ */
 import { movies } from "@/lib/mock-data";
 import type {
   CollectionItem,

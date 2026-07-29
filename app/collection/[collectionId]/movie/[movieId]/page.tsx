@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { MovieDetailResolver } from "@/components/movie/movie-detail-resolver";
 import { PageShell } from "@/components/page-shell";
 import { collectionService } from "@/lib/services/collection-service";
-import { movieService } from "@/lib/services/movie-service";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 
 type MovieDetailPageProps = {
   params: Promise<{ collectionId: string; movieId: string }>;
@@ -17,21 +17,19 @@ export default async function MovieDetailPage({
     notFound();
   }
 
-  const collection = collectionService.getById(collectionId);
-
-  // Server mock may not include TMDb-added titles — client store resolves those.
-  const initialItem =
-    movieId && collection && collection.items.length > 0
-      ? (movieService.getCollectionMovie(collection.items, movieId) ?? null)
-      : null;
+  // Cloud mode: resolve movie from byCollection on the client.
+  // Local/offline: seed collection metadata only (no mock-data movie lookup).
+  const seedCollection = isSupabaseConfigured()
+    ? null
+    : (collectionService.getById(collectionId) ?? null);
 
   return (
     <PageShell wide top>
       <MovieDetailResolver
         collectionId={collectionId}
-        seedCollection={collection ?? null}
+        seedCollection={seedCollection}
         movieId={movieId ?? ""}
-        initialItem={initialItem}
+        initialItem={null}
       />
     </PageShell>
   );

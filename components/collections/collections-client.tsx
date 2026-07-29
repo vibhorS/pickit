@@ -7,11 +7,8 @@ import { CollectionCard } from "@/components/collections/collection-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import { FadeIn } from "@/components/ui/fade-in";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  EMPTY_CREATED_COLLECTIONS,
-  mergeCollections,
-  useLocalCollectionStore,
-} from "@/store/local-collection-store";
+import { resolveCollectionCatalog } from "@/lib/collections/resolve-catalog";
+import { useLocalCollectionStore } from "@/store/local-collection-store";
 import { useCollaborationStore } from "@/store/collaboration-store";
 import { useVoteStore } from "@/store/vote-store";
 import type { Collection } from "@/lib/types";
@@ -34,12 +31,8 @@ export function CollectionsClient({
   const createCollection = useLocalCollectionStore(
     (state) => state.createCollection,
   );
-  const memberships = useCollaborationStore(
-    (state) => state.memberships,
-  );
-  const activeUserId = useCollaborationStore(
-    (state) => state.activeUserId,
-  );
+  const memberships = useCollaborationStore((state) => state.memberships);
+  const activeUserId = useCollaborationStore((state) => state.activeUserId);
   useEffect(() => {
     const finish = () => setHydrated(true);
     const unsubLocal =
@@ -62,11 +55,11 @@ export function CollectionsClient({
   }, []);
 
   const collections = useMemo(() => {
-    const merged = mergeCollections(
-        seedCollections,
-        createdCollections ?? EMPTY_CREATED_COLLECTIONS,
-        collectionOverrides,
-      );
+    const merged = resolveCollectionCatalog(
+      seedCollections,
+      createdCollections,
+      collectionOverrides,
+    );
     return merged.filter((collection) => {
       const collectionMemberships = memberships.filter(
         (membership) => membership.collectionId === collection.id,
@@ -109,7 +102,11 @@ export function CollectionsClient({
 
       <div className="mt-10 flex flex-col gap-4">
         {!hydrated ? (
-          <div className="flex flex-col gap-4" aria-busy="true" aria-label="Loading lists">
+          <div
+            className="flex flex-col gap-4"
+            aria-busy="true"
+            aria-label="Loading lists"
+          >
             {Array.from({ length: 3 }).map((_, index) => (
               <div
                 key={index}

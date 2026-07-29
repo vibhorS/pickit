@@ -24,6 +24,7 @@ import type { DecisionGameId } from "@/lib/decision-games/types";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import type { MovieNightCollectionCard } from "@/lib/movie-night-types";
 import { analytics } from "@/lib/observability/analytics";
+import { resolveCollectionCatalog } from "@/lib/collections/resolve-catalog";
 import type { CollectionMovie } from "@/lib/services/movie-service";
 import type { Collection, Movie } from "@/lib/types";
 import { useCollaborationStore } from "@/store/collaboration-store";
@@ -34,7 +35,6 @@ import {
 } from "@/store/collection-stats-selector";
 import {
   EMPTY_CREATED_COLLECTIONS,
-  mergeCollections,
   useLocalCollectionStore,
 } from "@/store/local-collection-store";
 import { useVoteStore } from "@/store/vote-store";
@@ -189,7 +189,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   }, []);
 
   const resolvedCards = useMemo(() => {
-    const merged = mergeCollections(
+    const merged = resolveCollectionCatalog(
       cards.map((card) => card.collection),
       createdCollections ?? EMPTY_CREATED_COLLECTIONS,
       collectionOverrides,

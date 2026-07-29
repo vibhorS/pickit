@@ -26,14 +26,20 @@ import type {
 import { fadeUp, MOTION } from "@/lib/motion";
 import { analytics } from "@/lib/observability/analytics";
 import { assertStage } from "@/lib/sync/save-assertions";
-import { savePathDebug } from "@/lib/debug/save-path-debug";
+import {
+  buildCollectionRef,
+  savePathDebug,
+} from "@/lib/debug/save-path-debug";
 import type { Collection } from "@/lib/types";
 import {
   filterInboxItems,
   useCaptureInboxStore,
 } from "@/store/capture-inbox-store";
+import { useCollaborationStore } from "@/store/collaboration-store";
 import {
-  mergeCollections,
+  resolveCollectionCatalog,
+} from "@/lib/collections/resolve-catalog";
+import {
   useLocalCollectionStore,
 } from "@/store/local-collection-store";
 
@@ -108,7 +114,11 @@ export function CaptureIntelligenceClient({
 
   const collections = useMemo(
     () =>
-      mergeCollections(seedCollections, createdCollections, collectionOverrides),
+      resolveCollectionCatalog(
+        seedCollections,
+        createdCollections,
+        collectionOverrides,
+      ),
     [seedCollections, createdCollections, collectionOverrides],
   );
 
@@ -499,12 +509,103 @@ export function CaptureIntelligenceClient({
     if (!active) return;
     setImporting(true);
     try {
+      const seedIds = new Set(seedCollections.map((c) => c.id));
+      const createdIds = new Set(createdCollections.map((c) => c.id));
+      const memberships = useCollaborationStore.getState().memberships;
+      const activeUserId = useCollaborationStore.getState().activeUserId;
+
+      const homeCatalog = collections
+        .filter((collection) => {
+          const collectionMemberships = memberships.filter(
+            (m) => m.collectionId === collection.id,
+          );
+          return (
+            collectionMemberships.length === 0 ||
+            collectionMemberships.some((m) => m.userId === activeUserId)
+          );
+        })
+        .map((c) => ({
+          id: c.id,
+          name: c.name,
+          source: seedIds.has(c.id)
+            ? "seed-mock"
+            : c.id.startsWith("demo-") || c.id.startsWith("collection-")
+              ? "cloud-hydrated"
+              : "created-local",
+        }));
+
+      const captureCatalog = collections.map((c) => ({
+        id: c.id,
+        name: c.name,
+        source: seedIds.has(c.id)
+          ? "seed-mock"
+          : c.id.startsWith("demo-") || c.id.startsWith("collection-")
+            ? "cloud-hydrated"
+            : "created-local",
+      }));
+
+      const uiSelected = [
+        ...active.selectedCollectionIds.map((id) => {
+          const c = collections.find((row) => row.id === id);
+          return buildCollectionRef({
+            id,
+            name: c?.name ?? `(missing:${id})`,
+            emoji: c?.emoji,
+            seedIds,
+            createdIds,
+            flags: { inSelectedIds: true, afterResolve: true },
+          });
+        }),
+        ...active.createCollectionNames.map((name) =>
+          buildCollectionRef({
+            id: `pending-create:${name}`,
+            name,
+            seedIds,
+            createdIds,
+            flags: { inCreateNames: true },
+          }),
+        ),
+      ];
+
+      savePathDebug.setCollectionPipeline({
+        uiSelected,
+        selectedCollectionIds: [...active.selectedCollectionIds],
+        createCollectionNames: [...active.createCollectionNames],
+        afterCreateResolve: [],
+        afterMembershipFilter: [],
+        added: [],
+        already: [],
+        listIdsWritten: [],
+        homeCatalog,
+        captureCatalog,
+        firstDivergence: null,
+      });
+
       const collectionIds = [...active.selectedCollectionIds];
       for (const name of active.createCollectionNames) {
         const created = createCollection(name);
         collectionIds.push(created.id);
+        savePathDebug.patchCollectionPipeline({
+          uiSelected: [
+            ...uiSelected.filter((r) => r.collectionId !== `pending-create:${name}`),
+            buildCollectionRef({
+              id: created.id,
+              name: created.name,
+              emoji: created.emoji,
+              seedIds,
+              createdIds: new Set([...createdIds, created.id]),
+              flags: {
+                inCreateNames: true,
+                afterResolve: true,
+              },
+            }),
+          ],
+        });
       }
       const uniqueIds = Array.from(new Set(collectionIds));
+      savePathDebug.patchCollectionPipeline({
+        afterCreateResolve: uniqueIds,
+      });
       console.info("STAGE 2b: Collections resolved", { uniqueIds });
       if (uniqueIds.length === 0) {
         console.error(

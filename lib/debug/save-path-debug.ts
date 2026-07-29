@@ -79,12 +79,42 @@ export type SavePathExit = {
   at: string;
 };
 
+export type SavePathCollectionRef = {
+  displayName: string;
+  collectionId: string;
+  source: "seed-mock" | "created-local" | "cloud-hydrated" | "create-on-save" | "unknown";
+  emoji?: string;
+  ownerId?: string | null;
+  inSelectedIds: boolean;
+  inCreateNames: boolean;
+  afterResolve: boolean;
+  afterMembershipFilter: boolean;
+  inAdded: boolean;
+  inAlready: boolean;
+  listIdWritten: boolean;
+};
+
+export type SavePathCollectionPipeline = {
+  uiSelected: SavePathCollectionRef[];
+  selectedCollectionIds: string[];
+  createCollectionNames: string[];
+  afterCreateResolve: string[];
+  afterMembershipFilter: string[];
+  added: string[];
+  already: string[];
+  listIdsWritten: string[];
+  homeCatalog: Array<{ id: string; name: string; source: string }>;
+  captureCatalog: Array<{ id: string; name: string; source: string }>;
+  firstDivergence: string | null;
+};
+
 export type SavePathDebugSnapshot = {
   startedAt: string | null;
   startedAtMs: number | null;
   steps: SavePathStep[];
   branches: SavePathBranchEvent[];
   firstExit: SavePathExit | null;
+  collectionPipeline: SavePathCollectionPipeline | null;
   birthId: string | null;
   birthObjectId: string | null;
   idChanges: Array<{
@@ -111,6 +141,7 @@ const EMPTY: SavePathDebugSnapshot = {
   steps: [],
   branches: [],
   firstExit: null,
+  collectionPipeline: null,
   birthId: null,
   birthObjectId: null,
   idChanges: [],
@@ -293,7 +324,122 @@ type SavePathDebugStore = SavePathDebugSnapshot & {
     error: unknown;
     httpStatus?: number | null;
   }) => void;
+  setCollectionPipeline: (pipeline: SavePathCollectionPipeline) => void;
+  patchCollectionPipeline: (
+    patch: Partial<SavePathCollectionPipeline>,
+  ) => void;
 };
+
+function classifyCollectionSource(
+  id: string,
+  seedIds: Set<string>,
+  createdIds: Set<string>,
+): SavePathCollectionRef["source"] {
+  if (id.startsWith("collection-") && !createdIds.has(id) && !seedIds.has(id)) {
+    return "create-on-save";
+  }
+  if (seedIds.has(id)) return "seed-mock";
+  if (createdIds.has(id)) {
+    return id.startsWith("collection-") || id.startsWith("demo-")
+      ? "cloud-hydrated"
+      : "created-local";
+  }
+  return "unknown";
+}
+
+export function buildCollectionRef(input: {
+  id: string;
+  name: string;
+  emoji?: string;
+  ownerId?: string | null;
+  seedIds: Set<string>;
+  createdIds: Set<string>;
+  flags: Partial<
+    Pick<
+      SavePathCollectionRef,
+      | "inSelectedIds"
+      | "inCreateNames"
+      | "afterResolve"
+      | "afterMembershipFilter"
+      | "inAdded"
+      | "inAlready"
+      | "listIdWritten"
+    >
+  >;
+}): SavePathCollectionRef {
+  return {
+    displayName: input.name,
+    collectionId: input.id,
+    source: classifyCollectionSource(input.id, input.seedIds, input.createdIds),
+    emoji: input.emoji,
+    ownerId: input.ownerId ?? null,
+    inSelectedIds: input.flags.inSelectedIds ?? false,
+    inCreateNames: input.flags.inCreateNames ?? false,
+    afterResolve: input.flags.afterResolve ?? false,
+    afterMembershipFilter: input.flags.afterMembershipFilter ?? false,
+    inAdded: input.flags.inAdded ?? false,
+    inAlready: input.flags.inAlready ?? false,
+    listIdWritten: input.flags.listIdWritten ?? false,
+  };
+}
+
+export function detectCollectionFirstDivergence(
+  pipeline: SavePathCollectionPipeline,
+): string | null {
+  const selected = pipeline.uiSelected.filter(
+    (r) => r.inSelectedIds || r.inCreateNames,
+  );
+  if (selected.length === 0 && pipeline.selectedCollectionIds.length === 0) {
+    return "UI: no chips selected / no create names";
+  }
+
+  for (const ref of selected) {
+    if (ref.inSelectedIds && !pipeline.selectedCollectionIds.includes(ref.collectionId)) {
+      return `UI→selectedCollectionIds: chip "${ref.displayName}" (${ref.collectionId}) missing from selectedCollectionIds`;
+    }
+  }
+
+  for (const id of pipeline.selectedCollectionIds) {
+    if (!pipeline.afterCreateResolve.includes(id)) {
+      return `selectedCollectionIds→afterCreateResolve: "${id}" dropped before create resolve`;
+    }
+  }
+
+  for (const id of pipeline.afterCreateResolve) {
+    if (!pipeline.afterMembershipFilter.includes(id)) {
+      const ref = pipeline.uiSelected.find((r) => r.collectionId === id);
+      return `afterCreateResolve→membershipFilter: "${ref?.displayName ?? id}" (${id}) REJECTED by membership filter`;
+    }
+  }
+
+  for (const id of pipeline.afterMembershipFilter) {
+    if (pipeline.already.includes(id)) {
+      const ref = pipeline.uiSelected.find((r) => r.collectionId === id);
+      return `membershipFilter→added: "${ref?.displayName ?? id}" (${id}) skipped as already present / deleted — cloud upsert never scheduled for this id`;
+    }
+    if (!pipeline.added.includes(id) && !pipeline.already.includes(id)) {
+      return `membershipFilter→added: "${id}" not in added or already`;
+    }
+  }
+
+  for (const id of pipeline.added) {
+    if (!pipeline.listIdsWritten.includes(id)) {
+      const ref = pipeline.uiSelected.find((r) => r.collectionId === id);
+      return `added→recommendations.upsert: "${ref?.displayName ?? id}" (${id}) in added but list_id never written`;
+    }
+  }
+
+  // Dual Date Night identity (same display name, different ids)
+  const dateNightIds = pipeline.uiSelected
+    .filter((r) => r.displayName.toLowerCase() === "date night")
+    .map((r) => r.collectionId);
+  const uniqueDateNight = Array.from(new Set(dateNightIds));
+  if (uniqueDateNight.length > 1) {
+    return `catalog duality: display name "Date Night" maps to ${uniqueDateNight.length} ids (${uniqueDateNight.join(", ")}) — seed-mock vs cloud/demo`;
+  }
+
+  return null;
+}
 
 function closePreviousDuration(
   steps: SavePathStep[],
@@ -635,6 +781,88 @@ export const useSavePathDebugStore = create<SavePathDebugStore>((set, get) => ({
         state.supabaseCalled || state.networkStartedAtMs != null,
     });
   },
+
+  setCollectionPipeline: (pipeline) => {
+    const withDivergence: SavePathCollectionPipeline = {
+      ...pipeline,
+      firstDivergence: detectCollectionFirstDivergence(pipeline),
+    };
+    set({ collectionPipeline: withDivergence });
+    get().branch({
+      label: "Collection ID pipeline",
+      outcome: withDivergence.firstDivergence ? "failed" : "passed",
+      detail:
+        withDivergence.firstDivergence ??
+        `OK · selected=${JSON.stringify(pipeline.selectedCollectionIds)} · written=${JSON.stringify(pipeline.listIdsWritten)}`,
+    });
+  },
+
+  patchCollectionPipeline: (patch) => {
+    const state = get();
+    const prev = state.collectionPipeline;
+    if (!prev) {
+      const empty: SavePathCollectionPipeline = {
+        uiSelected: [],
+        selectedCollectionIds: [],
+        createCollectionNames: [],
+        afterCreateResolve: [],
+        afterMembershipFilter: [],
+        added: [],
+        already: [],
+        listIdsWritten: [],
+        homeCatalog: [],
+        captureCatalog: [],
+        firstDivergence: null,
+      };
+      const next = { ...empty, ...patch };
+      set({
+        collectionPipeline: {
+          ...next,
+          firstDivergence: detectCollectionFirstDivergence(next),
+        },
+      });
+      return;
+    }
+
+    const next: SavePathCollectionPipeline = {
+      ...prev,
+      ...patch,
+      uiSelected: patch.uiSelected ?? prev.uiSelected,
+      listIdsWritten: patch.listIdsWritten
+        ? Array.from(
+            new Set([...prev.listIdsWritten, ...patch.listIdsWritten]),
+          )
+        : prev.listIdsWritten,
+    };
+    // Recompute per-ref flags from arrays when arrays patch
+    if (
+      patch.afterMembershipFilter ||
+      patch.added ||
+      patch.already ||
+      patch.listIdsWritten ||
+      patch.afterCreateResolve
+    ) {
+      next.uiSelected = next.uiSelected.map((ref) => ({
+        ...ref,
+        afterResolve: next.afterCreateResolve.includes(ref.collectionId),
+        afterMembershipFilter: next.afterMembershipFilter.includes(
+          ref.collectionId,
+        ),
+        inAdded: next.added.includes(ref.collectionId),
+        inAlready: next.already.includes(ref.collectionId),
+        listIdWritten: next.listIdsWritten.includes(ref.collectionId),
+      }));
+    }
+    next.firstDivergence = detectCollectionFirstDivergence(next);
+    set({ collectionPipeline: next });
+    if (next.firstDivergence) {
+      get().branch({
+        label: "Collection ID pipeline (updated)",
+        outcome: "failed",
+        detail: next.firstDivergence,
+      });
+    }
+  },
 }));
 
 /** Imperative helpers so non-React call sites stay one-liners. */
@@ -687,6 +915,14 @@ export const savePathDebug = {
     error: unknown;
     httpStatus?: number | null;
   }) => useSavePathDebugStore.getState().setSupabaseResponse(input),
+  setCollectionPipeline: (pipeline: SavePathCollectionPipeline) =>
+    useSavePathDebugStore.getState().setCollectionPipeline(pipeline),
+  patchCollectionPipeline: (patch: Partial<SavePathCollectionPipeline>) =>
+    useSavePathDebugStore.getState().patchCollectionPipeline(patch),
+  markListIdWritten: (listId: string) =>
+    useSavePathDebugStore.getState().patchCollectionPipeline({
+      listIdsWritten: [listId],
+    }),
   snapshot: (): SavePathDebugSnapshot => {
     const s = useSavePathDebugStore.getState();
     return {
@@ -695,6 +931,7 @@ export const savePathDebug = {
       steps: s.steps,
       branches: s.branches,
       firstExit: s.firstExit,
+      collectionPipeline: s.collectionPipeline,
       birthId: s.birthId,
       birthObjectId: s.birthObjectId,
       idChanges: s.idChanges,

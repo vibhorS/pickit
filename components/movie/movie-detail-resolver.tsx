@@ -8,6 +8,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FadeIn } from "@/components/ui/fade-in";
 import { MovieDetailSkeleton } from "@/components/ui/skeleton";
 import type { CollectionMovie } from "@/lib/services/movie-service";
+import { movieService } from "@/lib/services/movie-service";
+import { isSupabaseConfigured } from "@/lib/supabase/client";
 import type { Collection } from "@/lib/types";
 import {
   EMPTY_CREATED_COLLECTIONS,
@@ -100,9 +102,18 @@ export function MovieDetailResolver({
     );
   }
 
-  // Match collection grids/stats: locally persisted recommendation context wins.
+  // Match collection grids/stats: hydrated byCollection wins.
+  // Local/offline: fall back to mock seed resolution when byCollection miss.
   const removed = collectionOverride?.removedMovieIds?.includes(movieId);
-  const item = removed ? null : localItem ?? initialItem;
+  const seedFallback =
+    !removed &&
+    !localItem &&
+    !initialItem &&
+    collection &&
+    !isSupabaseConfigured()
+      ? (movieService.getCollectionMovie(collection.items, movieId) ?? null)
+      : initialItem;
+  const item = removed ? null : localItem ?? seedFallback;
 
   if (!item || !collection) {
     return (
