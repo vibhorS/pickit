@@ -35,12 +35,13 @@ import {
   type CollectionStats,
   useCollectionStatsList,
 } from "@/store/collection-stats-selector";
-import { useCrewPreferencesStore } from "@/store/crew-preferences-store";
+import { useCrewPreferencesStore, selectCrewStreamingProviderIds } from "@/store/crew-preferences-store";
 import { useCrewStore } from "@/store/crew-store";
 import {
   EMPTY_CREATED_COLLECTIONS,
   useLocalCollectionStore,
 } from "@/store/local-collection-store";
+import { expandCrewProviderIds } from "@/lib/streaming/provider-catalog";
 import { useVoteStore } from "@/store/vote-store";
 import { useSessionStore } from "@/store/session-store";
 import type { QuickPickSession } from "@/lib/tonight-queue";
@@ -151,11 +152,16 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   );
 
   const crew = useCrewStore((state) => state.crew);
-  const crewPrefs = useCrewPreferencesStore((state) =>
-    state.getPreferences(crew?.id),
+  const crewId = crew?.id;
+  const crewCountry = useCrewPreferencesStore((state) =>
+    crewId ? state.byCrewId[crewId]?.country : undefined,
   );
-  const crewStreamingProviderIds = useCrewPreferencesStore((state) =>
-    state.getExpandedStreamingProviderIds(crew?.id),
+  const selectedProviderIds = useCrewPreferencesStore((state) =>
+    selectCrewStreamingProviderIds(state, crewId),
+  );
+  const crewStreamingProviderIds = useMemo(
+    () => expandCrewProviderIds(selectedProviderIds),
+    [selectedProviderIds],
   );
 
   const mutualFingerprint = useMemo(
@@ -196,7 +202,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   const { byId: watchById, region: watchRegion } = useWatchProviders(
     mutualWatchRefs,
     {
-      regionContext: { crewCountry: crewPrefs.country },
+      regionContext: { crewCountry },
     },
   );
 
@@ -666,7 +672,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
           <p className="mt-2 text-sm text-netflix-muted">
             Only movies you can stream right now — on services your Crew owns.
           </p>
-          {crew && crewPrefs.streamingProviderIds.length === 0 ? (
+          {crew && selectedProviderIds.length === 0 ? (
             <p className="mt-3 text-sm text-netflix-muted/80">
               Tip: set your streaming services in{" "}
               <Link href="/crew" className="text-white underline-offset-2 hover:underline">

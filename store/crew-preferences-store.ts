@@ -1,6 +1,5 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import { expandCrewProviderIds } from "@/lib/streaming/provider-catalog";
 
 export type CrewStreamingPreferences = {
   /** Selected catalog provider ids (may be collapsed aliases). */
@@ -17,15 +16,19 @@ type CrewPreferencesStore = {
     streamingProviderIds: number[],
   ) => void;
   setCountry: (crewId: string, country: string | undefined) => void;
-  /** Expanded TMDB ids for filtering (includes aliases). */
-  getExpandedStreamingProviderIds: (
-    crewId: string | null | undefined,
-  ) => number[];
 };
 
-const EMPTY: CrewStreamingPreferences = {
+/** Stable empty prefs object for selector snapshots. */
+export const EMPTY_CREW_STREAMING_PREFERENCES: CrewStreamingPreferences = {
   streamingProviderIds: [],
 };
+
+/**
+ * Stable empty id list for selectors when a crew has no prefs yet.
+ * Do not allocate a new [] inside Zustand selectors.
+ */
+export const EMPTY_STREAMING_PROVIDER_IDS: number[] =
+  EMPTY_CREW_STREAMING_PREFERENCES.streamingProviderIds;
 
 export const useCrewPreferencesStore = create<CrewPreferencesStore>()(
   persist(
@@ -33,8 +36,8 @@ export const useCrewPreferencesStore = create<CrewPreferencesStore>()(
       byCrewId: {},
 
       getPreferences: (crewId) => {
-        if (!crewId) return EMPTY;
-        return get().byCrewId[crewId] ?? EMPTY;
+        if (!crewId) return EMPTY_CREW_STREAMING_PREFERENCES;
+        return get().byCrewId[crewId] ?? EMPTY_CREW_STREAMING_PREFERENCES;
       },
 
       setStreamingProviderIds: (crewId, streamingProviderIds) =>
@@ -42,7 +45,7 @@ export const useCrewPreferencesStore = create<CrewPreferencesStore>()(
           byCrewId: {
             ...state.byCrewId,
             [crewId]: {
-              ...(state.byCrewId[crewId] ?? EMPTY),
+              ...(state.byCrewId[crewId] ?? EMPTY_CREW_STREAMING_PREFERENCES),
               streamingProviderIds: [...new Set(streamingProviderIds)],
             },
           },
@@ -53,16 +56,11 @@ export const useCrewPreferencesStore = create<CrewPreferencesStore>()(
           byCrewId: {
             ...state.byCrewId,
             [crewId]: {
-              ...(state.byCrewId[crewId] ?? EMPTY),
+              ...(state.byCrewId[crewId] ?? EMPTY_CREW_STREAMING_PREFERENCES),
               country,
             },
           },
         })),
-
-      getExpandedStreamingProviderIds: (crewId) => {
-        const prefs = get().getPreferences(crewId);
-        return expandCrewProviderIds(prefs.streamingProviderIds);
-      },
     }),
     {
       name: "pickit-crew-preferences-v1",
@@ -71,3 +69,17 @@ export const useCrewPreferencesStore = create<CrewPreferencesStore>()(
     },
   ),
 );
+
+/**
+ * Selector-safe: returns a stored array reference (or the stable empty list).
+ * Expand aliases with expandCrewProviderIds in useMemo — never inside a selector.
+ */
+export function selectCrewStreamingProviderIds(
+  state: CrewPreferencesStore,
+  crewId: string | null | undefined,
+): number[] {
+  if (!crewId) return EMPTY_STREAMING_PROVIDER_IDS;
+  return (
+    state.byCrewId[crewId]?.streamingProviderIds ?? EMPTY_STREAMING_PROVIDER_IDS
+  );
+}

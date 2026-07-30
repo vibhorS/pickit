@@ -23,9 +23,13 @@ import type {
   VoteValue,
 } from "@/lib/types";
 import { can } from "@/lib/services/collaboration/permissions";
+import { expandCrewProviderIds } from "@/lib/streaming/provider-catalog";
 import { useCollectionStats } from "@/store/collection-stats-selector";
 import { useCollaborationStore } from "@/store/collaboration-store";
-import { useCrewPreferencesStore } from "@/store/crew-preferences-store";
+import {
+  selectCrewStreamingProviderIds,
+  useCrewPreferencesStore,
+} from "@/store/crew-preferences-store";
 import { useCrewStore } from "@/store/crew-store";
 import { useLocalCollectionStore } from "@/store/local-collection-store";
 
@@ -85,11 +89,16 @@ export function CollectionDetailClient({
     ratings,
   } = stats;
   const crew = useCrewStore((state) => state.crew);
+  const crewId = crew?.id;
   const crewCountry = useCrewPreferencesStore((state) =>
-    crew?.id ? state.getPreferences(crew.id).country : undefined,
+    crewId ? state.byCrewId[crewId]?.country : undefined,
   );
-  const householdProviderIds = useCrewPreferencesStore((state) =>
-    state.getExpandedStreamingProviderIds(crew?.id),
+  const selectedProviderIds = useCrewPreferencesStore((state) =>
+    selectCrewStreamingProviderIds(state, crewId),
+  );
+  const householdProviderIds = useMemo(
+    () => expandCrewProviderIds(selectedProviderIds),
+    [selectedProviderIds],
   );
   const watchRefs = useMemo(
     () =>

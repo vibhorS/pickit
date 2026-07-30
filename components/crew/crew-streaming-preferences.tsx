@@ -4,7 +4,10 @@ import {
   providerLogoUrl,
   uniqueCatalogForPreferences,
 } from "@/lib/streaming/provider-catalog";
-import { useCrewPreferencesStore } from "@/store/crew-preferences-store";
+import {
+  EMPTY_CREW_STREAMING_PREFERENCES,
+  useCrewPreferencesStore,
+} from "@/store/crew-preferences-store";
 
 type CrewStreamingPreferencesPanelProps = {
   crewId: string;
@@ -13,8 +16,8 @@ type CrewStreamingPreferencesPanelProps = {
 export function CrewStreamingPreferencesPanel({
   crewId,
 }: CrewStreamingPreferencesPanelProps) {
-  const prefs = useCrewPreferencesStore((state) =>
-    state.getPreferences(crewId),
+  const prefs = useCrewPreferencesStore(
+    (state) => state.byCrewId[crewId] ?? EMPTY_CREW_STREAMING_PREFERENCES,
   );
   const setStreamingProviderIds = useCrewPreferencesStore(
     (state) => state.setStreamingProviderIds,
