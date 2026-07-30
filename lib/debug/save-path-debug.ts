@@ -130,6 +130,20 @@ export type CloudIifePersistStep = {
   error: SavePathStageError | null;
 };
 
+/** Per-await timeline after movies.upsert → recommendations.upsert. */
+export type CloudIifeAwaitPhase = "entered" | "completed" | "threw";
+
+export type CloudIifePostMovieAwait = {
+  awaitLabel: string;
+  phase: CloudIifeAwaitPhase;
+  at: string;
+  atMs: number;
+  collectionId: string;
+  movieId: string;
+  recommendationId: string | null;
+  exception: SavePathStageError | null;
+};
+
 export type SavePathDebugSnapshot = {
   startedAt: string | null;
   startedAtMs: number | null;
@@ -139,6 +153,8 @@ export type SavePathDebugSnapshot = {
   collectionPipeline: SavePathCollectionPipeline | null;
   /** TEMPORARY — cloud IIFE await timeline for write-failure diagnosis. */
   cloudIifeSteps: CloudIifePersistStep[];
+  /** TEMPORARY — awaits after movies.upsert until recommendations.upsert returns. */
+  cloudIifePostMovieAwaits: CloudIifePostMovieAwait[];
   birthId: string | null;
   birthObjectId: string | null;
   idChanges: Array<{
@@ -167,6 +183,7 @@ const EMPTY: SavePathDebugSnapshot = {
   firstExit: null,
   collectionPipeline: null,
   cloudIifeSteps: [],
+  cloudIifePostMovieAwaits: [],
   birthId: null,
   birthObjectId: null,
   idChanges: [],
@@ -359,6 +376,16 @@ type SavePathDebugStore = SavePathDebugSnapshot & {
     movieId: string;
     recommendationId?: string | null;
     error?: unknown;
+  }) => void;
+  recordCloudIifeAwait: (input: {
+    awaitLabel: string;
+    phase: CloudIifeAwaitPhase;
+    collectionId: string;
+    movieId: string;
+    recommendationId?: string | null;
+    error?: unknown;
+    /** When true, replace the post-movie timeline (start of post-movies segment). */
+    reset?: boolean;
   }) => void;
 };
 
@@ -923,6 +950,38 @@ export const useSavePathDebugStore = create<SavePathDebugStore>((set, get) => ({
       startedAt,
       startedAtMs,
       cloudIifeSteps,
+      cloudIifePostMovieAwaits:
+        input.step === "1. entered cloud IIFE"
+          ? []
+          : state.cloudIifePostMovieAwaits,
+    });
+  },
+
+  recordCloudIifeAwait: (input) => {
+    const state = get();
+    const atMs = nowMs();
+    let startedAtMs = state.startedAtMs;
+    let startedAt = state.startedAt;
+    if (startedAtMs == null) {
+      startedAtMs = atMs;
+      startedAt = new Date().toISOString();
+    }
+    const entry: CloudIifePostMovieAwait = {
+      awaitLabel: input.awaitLabel,
+      phase: input.phase,
+      at: new Date().toISOString(),
+      atMs,
+      collectionId: input.collectionId,
+      movieId: input.movieId,
+      recommendationId: input.recommendationId ?? null,
+      exception: input.error != null ? toStageError(input.error) : null,
+    };
+    set({
+      startedAt,
+      startedAtMs,
+      cloudIifePostMovieAwaits: input.reset
+        ? [entry]
+        : [...state.cloudIifePostMovieAwaits, entry],
     });
   },
 }));
@@ -988,6 +1047,15 @@ export const savePathDebug = {
     recommendationId?: string | null;
     error?: unknown;
   }) => useSavePathDebugStore.getState().recordCloudIife(input),
+  recordCloudIifeAwait: (input: {
+    awaitLabel: string;
+    phase: CloudIifeAwaitPhase;
+    collectionId: string;
+    movieId: string;
+    recommendationId?: string | null;
+    error?: unknown;
+    reset?: boolean;
+  }) => useSavePathDebugStore.getState().recordCloudIifeAwait(input),
   markListIdWritten: (listId: string) =>
     useSavePathDebugStore.getState().patchCollectionPipeline({
       listIdsWritten: [listId],
@@ -1002,6 +1070,7 @@ export const savePathDebug = {
       firstExit: s.firstExit,
       collectionPipeline: s.collectionPipeline,
       cloudIifeSteps: s.cloudIifeSteps,
+      cloudIifePostMovieAwaits: s.cloudIifePostMovieAwaits,
       birthId: s.birthId,
       birthObjectId: s.birthObjectId,
       idChanges: s.idChanges,

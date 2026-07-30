@@ -728,18 +728,74 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                     await repos.movies.upsert(movie);
                     recordIife("5. repos.movies.upsert returned");
 
+                    // TEMPORARY — every await after movies.upsert until recommendations.upsert
+                    const recordPostMovieAwait = (
+                      awaitLabel: string,
+                      phase: "entered" | "completed" | "threw",
+                      error?: unknown,
+                      reset?: boolean,
+                    ) => {
+                      savePathDebug.recordCloudIifeAwait({
+                        awaitLabel,
+                        phase,
+                        collectionId,
+                        movieId: movie.id,
+                        recommendationId: cloudIifeRecommendationId,
+                        error,
+                        reset,
+                      });
+                    };
+                    recordPostMovieAwait(
+                      "repos.movies.upsert",
+                      "completed",
+                      undefined,
+                      true,
+                    );
+
+                    const tracedPostMovieAwait = async <T,>(
+                      awaitLabel: string,
+                      run: () => Promise<T>,
+                    ): Promise<T> => {
+                      recordPostMovieAwait(awaitLabel, "entered");
+                      try {
+                        const value = await run();
+                        recordPostMovieAwait(awaitLabel, "completed");
+                        return value;
+                      } catch (err) {
+                        recordPostMovieAwait(awaitLabel, "threw", err);
+                        throw err;
+                      }
+                    };
+
                     savePathDebug.branch(
                       "Condition: navigator.onLine",
                       navigator.onLine ? "passed" : "failed",
                       `onLine=${navigator.onLine}`,
                     );
-                    if (!navigator.onLine) {
-                      assertStage(
-                        7,
-                        "Insert() called",
-                        false,
-                        "navigator.onLine=false — Supabase insert() was NEVER called",
+                    recordPostMovieAwait(
+                      "assertStage(7) navigator.onLine gate",
+                      "entered",
+                    );
+                    try {
+                      if (!navigator.onLine) {
+                        assertStage(
+                          7,
+                          "Insert() called",
+                          false,
+                          "navigator.onLine=false — Supabase insert() was NEVER called",
+                        );
+                      }
+                      recordPostMovieAwait(
+                        "assertStage(7) navigator.onLine gate",
+                        "completed",
                       );
+                    } catch (err) {
+                      recordPostMovieAwait(
+                        "assertStage(7) navigator.onLine gate",
+                        "threw",
+                        err,
+                      );
+                      throw err;
                     }
 
                     traceRecommendation(rec, "before repository.upsert (same object?)", {
@@ -753,9 +809,11 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                       recId: rec.id,
                     });
                     {
-                      const { getRecommendationObjectId } = await import(
-                        "@/lib/sync/rec-id-trace"
-                      );
+                      const { getRecommendationObjectId } =
+                        await tracedPostMovieAwait(
+                          "import @/lib/sync/rec-id-trace",
+                          () => import("@/lib/sync/rec-id-trace"),
+                        );
                       savePathDebug.mark("repos.recommendations.upsert", {
                         recommendationId: rec.id,
                         objectId: getRecommendationObjectId(rec),
@@ -769,7 +827,10 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                     );
                     recordIife("6. repos.recommendations.upsert entered");
                     // Stages 4–9 are asserted inside CloudRecommendationRepository.upsert
-                    const saved = await repos.recommendations.upsert(rec);
+                    const saved = await tracedPostMovieAwait(
+                      "repos.recommendations.upsert",
+                      () => repos.recommendations.upsert(rec),
+                    );
                     recordIife("7. repos.recommendations.upsert returned");
                     savePathDebug.markListIdWritten(saved.listId);
                     savePathDebug.branch(

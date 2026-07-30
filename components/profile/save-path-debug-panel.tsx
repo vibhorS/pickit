@@ -10,6 +10,7 @@ import {
   buildSavePathSummary,
   useSavePathDebugStore,
   type CloudIifePersistStep,
+  type CloudIifePostMovieAwait,
   type SavePathStep,
 } from "@/lib/debug/save-path-debug";
 import { Surface } from "@/components/ui/surface";
@@ -28,6 +29,13 @@ function lastCompletedAwaitedStep(
       s.step !== "8. catch block entered" &&
       s.step !== "9. final exception",
   );
+  return completed.length > 0 ? completed[completed.length - 1]! : null;
+}
+
+function lastCompletedPostMovieAwait(
+  awaits: CloudIifePostMovieAwait[],
+): CloudIifePostMovieAwait | null {
+  const completed = awaits.filter((a) => a.phase === "completed");
   return completed.length > 0 ? completed[completed.length - 1]! : null;
 }
 
@@ -234,6 +242,126 @@ export function SavePathDebugPanel() {
                   ) : null}
                 </div>
               ) : null}
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <p className="font-medium text-zinc-300">
+                After movies.upsert → recommendations.upsert
+              </p>
+              {snap.cloudIifePostMovieAwaits.length === 0 ? (
+                <p className="text-zinc-600">
+                  Waiting for movies.upsert to complete…
+                </p>
+              ) : (
+                <>
+                  {(() => {
+                    const last = lastCompletedPostMovieAwait(
+                      snap.cloudIifePostMovieAwaits,
+                    );
+                    const failed = snap.cloudIifePostMovieAwaits.some(
+                      (a) => a.phase === "threw",
+                    );
+                    const threw = [...snap.cloudIifePostMovieAwaits]
+                      .reverse()
+                      .find((a) => a.phase === "threw");
+                    return (
+                      <div
+                        className={`rounded-lg border p-3 font-mono text-[11px] ${
+                          failed
+                            ? "border-red-500/40 bg-red-950/30"
+                            : "border-emerald-500/30 bg-emerald-950/20"
+                        }`}
+                      >
+                        <p className="font-medium text-zinc-200">
+                          LAST successfully completed await
+                        </p>
+                        <p
+                          className={
+                            failed
+                              ? "mt-1 font-semibold text-red-200"
+                              : "mt-1 font-semibold text-emerald-300"
+                          }
+                        >
+                          {last
+                            ? `${last.awaitLabel} · ${last.phase}`
+                            : "(none)"}
+                        </p>
+                        {last ? (
+                          <p className="mt-1 text-[10px] text-zinc-400">
+                            timestamp={last.at}
+                            {" · "}collectionId={last.collectionId}
+                            {" · "}movieId={last.movieId}
+                            {" · "}recommendationId=
+                            {last.recommendationId ?? "—"}
+                          </p>
+                        ) : null}
+                        {threw ? (
+                          <p className="mt-2 text-[10px] text-red-300">
+                            First threw: {threw.awaitLabel}
+                            {threw.exception
+                              ? ` — ${threw.exception.type}: ${threw.exception.message}`
+                              : ""}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
+                  <ul className="space-y-2">
+                    {snap.cloudIifePostMovieAwaits.map((event, index) => {
+                      const isThrow = event.phase === "threw";
+                      return (
+                        <li
+                          key={`${event.awaitLabel}-${event.phase}-${event.atMs}-${index}`}
+                          className={`rounded border p-2 font-mono text-[10px] ${
+                            isThrow
+                              ? "border-red-500/40 bg-red-950/20"
+                              : event.phase === "completed"
+                                ? "border-emerald-500/20 bg-emerald-950/10"
+                                : "border-zinc-800 bg-black/20"
+                          }`}
+                        >
+                          <p
+                            className={
+                              isThrow
+                                ? "font-semibold text-red-200"
+                                : event.phase === "completed"
+                                  ? "font-semibold text-emerald-300"
+                                  : "font-semibold text-amber-200"
+                            }
+                          >
+                            [{event.phase}] {event.awaitLabel}
+                          </p>
+                          <p className="mt-0.5 text-zinc-500">
+                            timestamp: {event.at}
+                          </p>
+                          <p className="text-zinc-400">
+                            collectionId: {event.collectionId}
+                          </p>
+                          <p className="text-zinc-400">
+                            movieId: {event.movieId}
+                          </p>
+                          <p className="text-zinc-400">
+                            recommendationId: {event.recommendationId ?? "—"}
+                          </p>
+                          {event.exception ? (
+                            <div className="mt-1 space-y-0.5 text-red-300">
+                              <p>
+                                exception: {event.exception.type}:{" "}
+                                {event.exception.message}
+                              </p>
+                              {event.exception.stack ? (
+                                <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-red-300/80">
+                                  {event.exception.stack}
+                                </pre>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
             </div>
 
             <div className="space-y-2 text-xs">
