@@ -342,6 +342,7 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     movieIdsResolved: string[];
   };
 }> {
+  const ANIMATED_ID = "collection-80bc5b34-2a3f-4fb2-8be9-036efd0e05e9";
   const { bootTrace } = await import("@/lib/debug/boot-trace");
 
   const repos = getCloudRepositories();
@@ -502,6 +503,26 @@ export async function loadCloudSnapshot(userId: string): Promise<{
       lists.map((list) => [list.id, list.name]),
     ),
     recommendationMeta,
+  });
+  bootTrace.recordUi({
+    stage: "Animated read path: after loadCloudSnapshot",
+    rows: [
+      {
+        "Collection ID": ANIMATED_ID,
+        "snapshot.byCollection movie IDs": (
+          byCollection[ANIMATED_ID] ?? []
+        ).map((item) => item.movie.id),
+        "snapshot.byCollection titles": (
+          byCollection[ANIMATED_ID] ?? []
+        ).map((item) => item.movie.title),
+        "snapshot.byCollection recommendation IDs": (
+          byCollection[ANIMATED_ID] ?? []
+        ).map((item) => item.recommendationId ?? null),
+        "snapshot.byCollection movie count": (
+          byCollection[ANIMATED_ID] ?? []
+        ).length,
+      },
+    ],
   });
 
   const collectionLists: Collection[] = lists.map((list) => ({

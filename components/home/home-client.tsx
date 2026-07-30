@@ -68,25 +68,46 @@ export function HomeClient() {
   // TEMPORARY diagnostics — Home recent-collection card props (not CollectionCard).
   useEffect(() => {
     void import("@/lib/debug/boot-trace").then(({ bootTrace }) => {
+      const ANIMATED_ID = "collection-80bc5b34-2a3f-4fb2-8be9-036efd0e05e9";
+      const animatedCollection = collections.find((c) => c.id === ANIMATED_ID);
+      const animatedItems = byCollection[ANIMATED_ID] ?? [];
+      const animatedStat = stats.find((s) =>
+        animatedItems.some((item) => s.movies.some((m) => m.id === item.movie.id)),
+      );
       bootTrace.recordUi({
         stage: "Home recent collection card props",
-        rows: recentCollections.map((collection, index) => {
-          const items = byCollection[collection.id] ?? [];
-          const stat = stats[index];
-          const movieCount = stat?.totalMovies ?? 0;
-          return {
-            "Collection ID": collection.id,
-            "Collection name": collection.name,
-            "byCollection movie IDs": items.map((item) => item.movie.id),
-            "byCollection titles": items.map((item) => item.movie.title),
-            "byCollection movie count": items.length,
-            "stats.totalMovies": stat?.totalMovies ?? null,
-            "stats.movieIds": stat?.movies.map((m) => m.id) ?? [],
-            "stats.titles": stat?.movies.map((m) => m.title) ?? [],
-            "rendered movieCount": movieCount,
-            "rendered label": `${movieCount} movies · ${stat?.mutualMatches ?? 0} mutual matches`,
-          };
-        }),
+        rows: [
+          ...recentCollections.map((collection, index) => {
+            const items = byCollection[collection.id] ?? [];
+            const stat = stats[index];
+            const movieCount = stat?.totalMovies ?? 0;
+            return {
+              "Collection ID": collection.id,
+              "Collection name": collection.name,
+              "byCollection movie IDs": items.map((item) => item.movie.id),
+              "byCollection titles": items.map((item) => item.movie.title),
+              "byCollection movie count": items.length,
+              "stats.totalMovies": stat?.totalMovies ?? null,
+              "stats.movieIds": stat?.movies.map((m) => m.id) ?? [],
+              "stats.titles": stat?.movies.map((m) => m.title) ?? [],
+              "rendered movieCount": movieCount,
+              "rendered label": `${movieCount} movies · ${stat?.mutualMatches ?? 0} mutual matches`,
+            };
+          }),
+          {
+            "Collection ID": ANIMATED_ID,
+            "Collection name": animatedCollection?.name ?? "Animated?",
+            "is in Home recentCollections": recentCollections.some(
+              (c) => c.id === ANIMATED_ID,
+            ),
+            "byCollection movie IDs": animatedItems.map((item) => item.movie.id),
+            "byCollection titles": animatedItems.map((item) => item.movie.title),
+            "byCollection movie count": animatedItems.length,
+            "stats.totalMovies (matched)": animatedStat?.totalMovies ?? null,
+            "stats.movieIds (matched)": animatedStat?.movies.map((m) => m.id) ?? [],
+            "stats.titles (matched)": animatedStat?.movies.map((m) => m.title) ?? [],
+          },
+        ],
       });
     });
   }, [byCollection, recentCollections, stats]);

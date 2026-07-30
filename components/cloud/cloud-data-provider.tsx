@@ -71,6 +71,8 @@ function recordByCollection(
   });
 }
 
+const ANIMATED_ID = "collection-80bc5b34-2a3f-4fb2-8be9-036efd0e05e9";
+
 /**
  * Boots cloud sync, migrates local data once, hydrates Crew-scoped stores,
  * and subscribes to realtime invalidation.
@@ -361,6 +363,26 @@ function mergeCloudSnapshot(userId: string, snapshot: CloudSnapshot) {
     snapshotListIds,
     snapshotNames,
   );
+  bootTrace.recordUi({
+    stage: "Animated read path: mergeCloudSnapshot BEFORE (local)",
+    rows: [
+      {
+        "Collection ID": ANIMATED_ID,
+        "local byCollection movie IDs": (localByCollection[ANIMATED_ID] ?? []).map(
+          (item) => item.movie.id,
+        ),
+        "local byCollection titles": (localByCollection[ANIMATED_ID] ?? []).map(
+          (item) => item.movie.title,
+        ),
+        "local byCollection recommendation IDs": (
+          localByCollection[ANIMATED_ID] ?? []
+        ).map(() => null),
+        "local byCollection movie count": (
+          localByCollection[ANIMATED_ID] ?? []
+        ).length,
+      },
+    ],
+  });
   recordByCollection(
     "mergeCloudSnapshot: BEFORE (cloud snapshot)",
     "SNAPSHOT",
@@ -430,6 +452,26 @@ function mergeCloudSnapshot(userId: string, snapshot: CloudSnapshot) {
     snapshotListIds,
     snapshotNames,
   );
+  bootTrace.recordUi({
+    stage: "Animated read path: mergeCloudSnapshot mergedByCollection",
+    rows: [
+      {
+        "Collection ID": ANIMATED_ID,
+        "mergedByCollection movie IDs": (
+          mergedByCollection[ANIMATED_ID] ?? []
+        ).map((item) => item.movie.id),
+        "mergedByCollection titles": (
+          mergedByCollection[ANIMATED_ID] ?? []
+        ).map((item) => item.movie.title),
+        "mergedByCollection recommendation IDs": (
+          mergedByCollection[ANIMATED_ID] ?? []
+        ).map(() => null),
+        "mergedByCollection movie count": (
+          mergedByCollection[ANIMATED_ID] ?? []
+        ).length,
+      },
+    ],
+  });
 
   useLocalCollectionStore.setState({
     createdCollections: mergedCollections,
@@ -445,6 +487,26 @@ function mergeCloudSnapshot(userId: string, snapshot: CloudSnapshot) {
     snapshotListIds,
     snapshotNames,
   );
+  bootTrace.recordUi({
+    stage: "Animated read path: after mergeCloudSnapshot setState",
+    rows: [
+      {
+        "Collection ID": ANIMATED_ID,
+        "store.byCollection movie IDs": (
+          useLocalCollectionStore.getState().byCollection[ANIMATED_ID] ?? []
+        ).map((item) => item.movie.id),
+        "store.byCollection titles": (
+          useLocalCollectionStore.getState().byCollection[ANIMATED_ID] ?? []
+        ).map((item) => item.movie.title),
+        "store.byCollection recommendation IDs": (
+          useLocalCollectionStore.getState().byCollection[ANIMATED_ID] ?? []
+        ).map(() => null),
+        "store.byCollection movie count": (
+          useLocalCollectionStore.getState().byCollection[ANIMATED_ID] ?? []
+        ).length,
+      },
+    ],
+  });
 
   const asUsers = snapshot.memberProfiles.map((profile) => ({
     id: profile.id,

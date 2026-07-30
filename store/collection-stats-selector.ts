@@ -288,6 +288,7 @@ export function useCollectionStats(
 export function useCollectionStatsList(
   collectionIds: string[],
 ): CollectionStats[] {
+  const ANIMATED_ID = "collection-80bc5b34-2a3f-4fb2-8be9-036efd0e05e9";
   const votes = useVoteStore((state) => state.votes);
   const byCollection = useLocalCollectionStore(
     (state) => state.byCollection,
@@ -344,24 +345,50 @@ export function useCollectionStatsList(
       const nameById = Object.fromEntries(
         (createdCollections ?? []).map((c) => [c.id, c.name]),
       );
+      const animatedStats = deriveCollectionStats(ANIMATED_ID, {
+        votes,
+        byCollection,
+        createdCollections: createdCollections ?? EMPTY_CREATED_COLLECTIONS,
+        collectionOverrides: collectionOverrides ?? EMPTY_COLLECTION_OVERRIDES,
+        users,
+        memberships,
+        activeUserId,
+      });
       bootTrace.recordUi({
         stage: "useCollectionStatsList() INPUT+OUTPUT",
         detail: `collectionIds=${JSON.stringify(collectionIds)}`,
-        rows: collectionIds.map((collectionId, index) => {
-          const items = byCollection[collectionId] ?? [];
-          const stat = stats[index];
-          return {
-            "Collection ID": collectionId,
-            "Collection name": nameById[collectionId] ?? "(name unknown)",
-            "byCollection movie IDs": items.map((item) => item.movie.id),
-            "byCollection titles": items.map((item) => item.movie.title),
-            "byCollection movie count": items.length,
-            "stats.totalMovies": stat?.totalMovies ?? null,
-            "stats.movieIds": stat?.movies.map((m) => m.id) ?? [],
-            "stats.titles": stat?.movies.map((m) => m.title) ?? [],
-            "stats.mutualMatches": stat?.mutualMatches ?? null,
-          };
-        }),
+        rows: [
+          ...collectionIds.map((collectionId, index) => {
+            const items = byCollection[collectionId] ?? [];
+            const stat = stats[index];
+            return {
+              "Collection ID": collectionId,
+              "Collection name": nameById[collectionId] ?? "(name unknown)",
+              "byCollection movie IDs": items.map((item) => item.movie.id),
+              "byCollection titles": items.map((item) => item.movie.title),
+              "byCollection movie count": items.length,
+              "stats.totalMovies": stat?.totalMovies ?? null,
+              "stats.movieIds": stat?.movies.map((m) => m.id) ?? [],
+              "stats.titles": stat?.movies.map((m) => m.title) ?? [],
+              "stats.mutualMatches": stat?.mutualMatches ?? null,
+            };
+          }),
+          {
+            "Collection ID": ANIMATED_ID,
+            "Collection name": nameById[ANIMATED_ID] ?? "Animated?",
+            "in collectionIds input": collectionIds.includes(ANIMATED_ID),
+            "byCollection movie IDs": (byCollection[ANIMATED_ID] ?? []).map(
+              (item) => item.movie.id,
+            ),
+            "byCollection titles": (byCollection[ANIMATED_ID] ?? []).map(
+              (item) => item.movie.title,
+            ),
+            "byCollection movie count": (byCollection[ANIMATED_ID] ?? []).length,
+            "stats.totalMovies": animatedStats.totalMovies,
+            "stats.movieIds": animatedStats.movies.map((m) => m.id),
+            "stats.titles": animatedStats.movies.map((m) => m.title),
+          },
+        ],
       });
     });
   }, [byCollection, collectionIds, createdCollections, stats]);
