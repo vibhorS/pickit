@@ -21,6 +21,8 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { FadeIn } from "@/components/ui/fade-in";
 import { MovieDetailSkeleton } from "@/components/ui/skeleton";
 import type { DecisionGameId } from "@/lib/decision-games/types";
+import { useWatchProviders } from "@/hooks/use-watch-providers";
+import { buildMovieNightQueue } from "@/lib/movie-night/build-queue";
 import { staggerContainer, staggerItem } from "@/lib/motion";
 import type { MovieNightCollectionCard } from "@/lib/movie-night-types";
 import { analytics } from "@/lib/observability/analytics";
@@ -33,6 +35,8 @@ import {
   type CollectionStats,
   useCollectionStatsList,
 } from "@/store/collection-stats-selector";
+import { useCrewPreferencesStore } from "@/store/crew-preferences-store";
+import { useCrewStore } from "@/store/crew-store";
 import {
   EMPTY_CREATED_COLLECTIONS,
   useLocalCollectionStore,
@@ -72,6 +76,8 @@ type MovieNightFlowProps = {
 type PendingCollection = {
   collection: Collection;
   stats: CollectionStats;
+  /** Mutual matches exist but none are streamable on crew services. */
+  streamingBlocked?: boolean;
 };
 
 type Step =
@@ -99,7 +105,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   const [step, setStep] = useState<Step>({ kind: "picker" });
   const [pending, setPending] = useState<PendingCollection | null>(null);
   const restoredSession = useRef(false);
-  const movieNightStartedAt = useRef<number>(Date.now());
+  const movieNightStartedAt = useRef(0);
   const currentSession = useSessionStore((state) => state.current);
   const setCurrentSession = useSessionStore(
     (state) => state.setCurrentSession,
@@ -142,6 +148,56 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
         ]),
       ),
     [collectionIds, allStats],
+  );
+
+  const crew = useCrewStore((state) => state.crew);
+  const crewPrefs = useCrewPreferencesStore((state) =>
+    state.getPreferences(crew?.id),
+  );
+  const crewStreamingProviderIds = useCrewPreferencesStore((state) =>
+    state.getExpandedStreamingProviderIds(crew?.id),
+  );
+
+  const mutualFingerprint = useMemo(
+    () =>
+      allStats
+        .map((stats) =>
+          stats.mutualMatchMovies.map((movie) => movie.id).join(","),
+        )
+        .join("|"),
+    [allStats],
+  );
+
+  const mutualTitleKey = useMemo(() => {
+    const ids: string[] = [];
+    for (const collectionId of collectionIds) {
+      for (const entry of getTonightQueue(collectionId)) {
+        ids.push(
+          `${entry.movie.mediaType === "tv" ? "tv" : "movie"}:${entry.movie.id}`,
+        );
+      }
+    }
+    return [...new Set(ids)].sort().join("|");
+    // Recompute when mutual-match set changes (getTonightQueue reads store snapshot).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [collectionIds, mutualFingerprint]);
+
+  const mutualWatchRefs = useMemo(() => {
+    if (!mutualTitleKey) return [];
+    return mutualTitleKey.split("|").map((token) => {
+      const [mediaType, id] = token.split(":");
+      return {
+        id,
+        mediaType: mediaType === "tv" ? ("tv" as const) : ("movie" as const),
+      };
+    });
+  }, [mutualTitleKey]);
+
+  const { byId: watchById, region: watchRegion } = useWatchProviders(
+    mutualWatchRefs,
+    {
+      regionContext: { crewCountry: crewPrefs.country },
+    },
   );
 
   useEffect(() => {
@@ -231,13 +287,27 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
       const stats = statsById.get(card.collection.id);
       if (!stats) return null;
 
+      const queue = buildMovieNightQueue({
+        collectionId: card.collection.id,
+        availabilityById: watchById,
+        crewStreamingProviderIds,
+        region: watchRegion,
+      });
+
       return {
         collectionId: card.collection.id,
         stats,
-        queue: getTonightQueue(card.collection.id),
+        queue,
+        mutualCount: stats.mutualMatches,
       };
     }).filter((entry): entry is NonNullable<typeof entry> => entry != null);
-  }, [resolvedCards, statsById]);
+  }, [
+    crewStreamingProviderIds,
+    resolvedCards,
+    statsById,
+    watchById,
+    watchRegion,
+  ]);
 
   const saveMovieNightSession = useCallback(
     (
@@ -383,6 +453,8 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
       setPending({
         collection: card.collection,
         stats: info.stats,
+        streamingBlocked:
+          info.mutualCount > 0 && info.stats.readinessState === "ready",
       });
       return;
     }
@@ -592,8 +664,17 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
             What&apos;s the vibe like tonight?
           </h1>
           <p className="mt-2 text-sm text-netflix-muted">
-            Choose where tonight begins.
+            Only movies you can stream right now — on services your Crew owns.
           </p>
+          {crew && crewPrefs.streamingProviderIds.length === 0 ? (
+            <p className="mt-3 text-sm text-netflix-muted/80">
+              Tip: set your streaming services in{" "}
+              <Link href="/crew" className="text-white underline-offset-2 hover:underline">
+                Your Crew
+              </Link>{" "}
+              to keep Movie Night on platforms you actually have.
+            </p>
+          ) : null}
         </div>
 
         <motion.div
@@ -629,10 +710,15 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
         open={pending != null}
         stats={pending?.stats ?? null}
         collectionName={pending?.collection.name ?? ""}
+        streamingBlocked={pending?.streamingBlocked ?? false}
         onDismiss={() => setPending(null)}
         onRate={() => {
           if (!pending) return;
           router.push(`/rate/${pending.collection.id}`);
+        }}
+        onConfigureStreaming={() => {
+          setPending(null);
+          router.push("/crew");
         }}
       />
     </>

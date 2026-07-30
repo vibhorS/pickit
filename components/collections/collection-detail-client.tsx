@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { Film, Pencil, Plus, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AddMovieModal } from "@/components/collections/add-movie-modal";
 import { CollectionActivity } from "@/components/collections/collection-activity";
 import { CollectionCollaborationPanel } from "@/components/collections/collection-collaboration-panel";
@@ -12,6 +12,7 @@ import { CollectionRecommendationInsights } from "@/components/collections/colle
 import { MovieGridCard } from "@/components/movie/movie-grid-card";
 import { EmptyState, Toast } from "@/components/ui/empty-state";
 import { FadeIn } from "@/components/ui/fade-in";
+import { useWatchProviders } from "@/hooks/use-watch-providers";
 import { MOTION, staggerContainer } from "@/lib/motion";
 import { sourceFromMetadata } from "@/lib/recommendation-metadata";
 import { TMDB_SEARCH_SOURCE } from "@/lib/recommendation-source";
@@ -24,6 +25,8 @@ import type {
 import { can } from "@/lib/services/collaboration/permissions";
 import { useCollectionStats } from "@/store/collection-stats-selector";
 import { useCollaborationStore } from "@/store/collaboration-store";
+import { useCrewPreferencesStore } from "@/store/crew-preferences-store";
+import { useCrewStore } from "@/store/crew-store";
 import { useLocalCollectionStore } from "@/store/local-collection-store";
 
 type CollectionDetailClientProps = {
@@ -81,6 +84,24 @@ export function CollectionDetailClient({
     members,
     ratings,
   } = stats;
+  const crew = useCrewStore((state) => state.crew);
+  const crewCountry = useCrewPreferencesStore((state) =>
+    crew?.id ? state.getPreferences(crew.id).country : undefined,
+  );
+  const householdProviderIds = useCrewPreferencesStore((state) =>
+    state.getExpandedStreamingProviderIds(crew?.id),
+  );
+  const watchRefs = useMemo(
+    () =>
+      items.map((entry) => ({
+        id: entry.movie.id,
+        mediaType: entry.movie.mediaType === "tv" ? ("tv" as const) : ("movie" as const),
+      })),
+    [items],
+  );
+  const { byId: watchById } = useWatchProviders(watchRefs, {
+    regionContext: { crewCountry },
+  });
   const canManage = can("list.rename", {
     userId: currentUser.id,
     collection,
@@ -477,6 +498,8 @@ export function CollectionDetailClient({
                             movie={item.movie}
                             source={item.source}
                             metadata={item.metadata}
+                            watchAvailability={watchById.get(item.movie.id)}
+                            householdProviderIds={householdProviderIds}
                             memberRatings={members.map((member) => ({
                               userId: member.id,
                               name: member.name,

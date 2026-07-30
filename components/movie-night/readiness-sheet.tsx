@@ -9,43 +9,51 @@ type ReadinessSheetProps = {
   open: boolean;
   stats: CollectionStats | null;
   collectionName: string;
+  streamingBlocked?: boolean;
   onRate: () => void;
   onDismiss: () => void;
+  onConfigureStreaming?: () => void;
 };
 
 export function ReadinessSheet({
   open,
   stats,
   collectionName,
+  streamingBlocked = false,
   onRate,
   onDismiss,
+  onConfigureStreaming,
 }: ReadinessSheetProps) {
   const waitingForMembers =
-    stats?.readinessState === "waiting-for-members";
+    !streamingBlocked && stats?.readinessState === "waiting-for-members";
   const needsMyRatings =
-    stats?.readinessState === "waiting-for-you";
+    !streamingBlocked && stats?.readinessState === "waiting-for-you";
   const noMutualMatches =
-    stats?.readinessState === "no-mutual-matches";
-  const title = waitingForMembers
-    ? stats?.readinessLabel ?? "Waiting for members"
-    : needsMyRatings
-      ? `${stats.unratedMine} ${
-          stats.unratedMine === 1 ? "movie needs" : "movies need"
-        } your rating`
-      : noMutualMatches
-        ? "No mutual matches yet"
-      : `${collectionName} isn’t ready yet`;
-  const description = waitingForMembers
-    ? `You've rated everything. ${stats?.waitingMemberNames.join(", ")} ${
-        stats?.waitingMemberNames.length === 1 ? "has" : "have"
-      } ${stats?.unratedOthers ?? 0} ${
-        (stats?.unratedOthers ?? 0) === 1 ? "rating" : "ratings"
-      } left.`
-    : needsMyRatings
-      ? "Finish your ratings to see the list's shared matches."
-      : noMutualMatches
-        ? "Everyone has finished rating, but no movie was liked by every member."
-      : "Add movies and rate them together before starting Movie Night.";
+    !streamingBlocked && stats?.readinessState === "no-mutual-matches";
+  const title = streamingBlocked
+    ? "Nothing streamable tonight"
+    : waitingForMembers
+      ? (stats?.readinessLabel ?? "Waiting for members")
+      : needsMyRatings
+        ? `${stats.unratedMine} ${
+            stats.unratedMine === 1 ? "movie needs" : "movies need"
+          } your rating`
+        : noMutualMatches
+          ? "No mutual matches yet"
+          : `${collectionName} isn’t ready yet`;
+  const description = streamingBlocked
+    ? "Your mutual matches aren’t available on the streaming services your Crew owns right now. They’re still saved in the list — try again after availability refreshes, or update your services."
+    : waitingForMembers
+      ? `You've rated everything. ${stats?.waitingMemberNames.join(", ")} ${
+          stats?.waitingMemberNames.length === 1 ? "has" : "have"
+        } ${stats?.unratedOthers ?? 0} ${
+          (stats?.unratedOthers ?? 0) === 1 ? "rating" : "ratings"
+        } left.`
+      : needsMyRatings
+        ? "Finish your ratings to see the list's shared matches."
+        : noMutualMatches
+          ? "Everyone has finished rating, but no movie was liked by every member."
+          : "Add movies and rate them together before starting Movie Night.";
 
   useEffect(() => {
     if (!open) return;
@@ -86,7 +94,7 @@ export function ReadinessSheet({
             <div className="mx-auto mb-5 h-1 w-10 rounded-full bg-white/15 sm:hidden" />
 
             <p aria-hidden="true" className="text-2xl">
-              ⚠️
+              {streamingBlocked ? "📺" : "⚠️"}
             </p>
             <h2
               id="readiness-title"
@@ -108,6 +116,15 @@ export function ReadinessSheet({
                   Rate Movies
                 </button>
               )}
+              {streamingBlocked && onConfigureStreaming ? (
+                <button
+                  type="button"
+                  onClick={onConfigureStreaming}
+                  className="btn-secondary w-full"
+                >
+                  Update Streaming Services
+                </button>
+              ) : null}
               <button
                 type="button"
                 onClick={onDismiss}

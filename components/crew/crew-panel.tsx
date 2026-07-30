@@ -4,6 +4,7 @@ import { Check, Copy, Link2, Pencil, Users, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { CrewMemberPresence } from "@/components/crew/crew-presence";
+import { CrewStreamingPreferencesPanel } from "@/components/crew/crew-streaming-preferences";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Surface } from "@/components/ui/surface";
@@ -20,20 +21,14 @@ export function CrewPanel() {
   const members = useCrewStore((state) => state.members);
   const pendingInvite = useCrewStore((state) => state.pendingInvite);
   const setSnapshot = useCrewStore((state) => state.setSnapshot);
-  const [token, setToken] = useState<string | null>(null);
+  const [createdToken, setCreatedToken] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
-  const [crewNameDraft, setCrewNameDraft] = useState("");
-
-  useEffect(() => {
-    if (pendingInvite) setToken(pendingInvite.token);
-  }, [pendingInvite]);
-
-  useEffect(() => {
-    if (crew?.name) setCrewNameDraft(crew.name);
-  }, [crew?.name]);
+  const [crewNameDraft, setCrewNameDraft] = useState<string | null>(null);
+  const token = createdToken ?? pendingInvite?.token ?? null;
+  const nameDraft = crewNameDraft ?? crew?.name ?? "";
 
   useEffect(() => {
     if (!profile || !isSupabaseConfigured()) return;
@@ -97,10 +92,10 @@ export function CrewPanel() {
 
   async function handleRename() {
     if (!profile) return;
-    const next = crewNameDraft.trim();
+    const next = nameDraft.trim();
     if (!next || next === crew?.name) {
       setEditingName(false);
-      setCrewNameDraft(crew?.name ?? "");
+      setCrewNameDraft(null);
       return;
     }
     setBusy(true);
@@ -112,12 +107,12 @@ export function CrewPanel() {
           ? { ...state.crew, name: renamed.name, updatedAt: renamed.updatedAt }
           : renamed,
       }));
-      setCrewNameDraft(renamed.name);
+      setCrewNameDraft(null);
       setEditingName(false);
       await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not rename Crew.");
-      setCrewNameDraft(crew?.name ?? "");
+      setCrewNameDraft(null);
     } finally {
       setBusy(false);
     }
@@ -129,7 +124,7 @@ export function CrewPanel() {
     setError(null);
     try {
       const { token: next } = await crewService.invite(profile.id);
-      setToken(next);
+      setCreatedToken(next);
       analytics.track("invite_sent", { crewId: crew?.id ?? null });
       await refresh();
     } catch (err) {
@@ -153,7 +148,7 @@ export function CrewPanel() {
     setBusy(true);
     try {
       await crewService.cancelInvite(profile.id);
-      setToken(null);
+      setCreatedToken(null);
       await refresh();
     } finally {
       setBusy(false);
@@ -219,7 +214,7 @@ export function CrewPanel() {
           <div className="space-y-3">
             <Input
               label="Crew name"
-              value={crewNameDraft}
+              value={nameDraft}
               onChange={(event) => setCrewNameDraft(event.target.value)}
               maxLength={60}
               autoFocus
@@ -230,13 +225,13 @@ export function CrewPanel() {
                 }
                 if (event.key === "Escape") {
                   setEditingName(false);
-                  setCrewNameDraft(crew?.name ?? "");
+                  setCrewNameDraft(null);
                 }
               }}
             />
             <div className="flex flex-wrap gap-2">
               <Button
-                disabled={busy || !crewNameDraft.trim()}
+                disabled={busy || !nameDraft.trim()}
                 onClick={() => void handleRename()}
               >
                 Save name
@@ -246,7 +241,7 @@ export function CrewPanel() {
                 disabled={busy}
                 onClick={() => {
                   setEditingName(false);
-                  setCrewNameDraft(crew?.name ?? "");
+                  setCrewNameDraft(null);
                 }}
               >
                 Cancel
@@ -344,6 +339,8 @@ export function CrewPanel() {
             Leave Crew
           </Button>
         )}
+
+        {crew ? <CrewStreamingPreferencesPanel crewId={crew.id} /> : null}
       </Surface>
     </section>
   );

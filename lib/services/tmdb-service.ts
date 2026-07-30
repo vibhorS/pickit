@@ -84,6 +84,44 @@ function mapSearchResult(movie: TmdbSearchMovieResult): TmdbSearchMovie {
   };
 }
 
+export type TmdbWatchProvider = {
+  providerId: number;
+  name: string;
+  logoPath: string | null;
+};
+
+type TmdbWatchProviderResult = {
+  provider_id: number;
+  provider_name: string;
+  logo_path: string | null;
+  display_priority?: number;
+};
+
+type TmdbWatchProvidersResponse = {
+  results?: Record<
+    string,
+    {
+      flatrate?: TmdbWatchProviderResult[];
+      rent?: TmdbWatchProviderResult[];
+      buy?: TmdbWatchProviderResult[];
+      ads?: TmdbWatchProviderResult[];
+      free?: TmdbWatchProviderResult[];
+    }
+  >;
+};
+
+function mapWatchProvider(
+  provider: TmdbWatchProviderResult,
+): TmdbWatchProvider {
+  return {
+    providerId: provider.provider_id,
+    name: provider.provider_name,
+    logoPath: provider.logo_path
+      ? `${TMDB_IMAGE_BASE_URL}${provider.logo_path}`
+      : null,
+  };
+}
+
 export const tmdbService = {
   async searchMovies(query: string): Promise<TmdbSearchMovie[]> {
     const trimmedQuery = query.trim();
@@ -106,5 +144,34 @@ export const tmdbService = {
     const data = (await response.json()) as TmdbSearchResponse;
 
     return data.results.map(mapSearchResult);
+  },
+
+  /**
+   * Flatrate (subscription) watch providers for a title in a region.
+   * Rent / buy / ads / free are intentionally ignored.
+   */
+  async getWatchProviders(
+    mediaType: "movie" | "tv",
+    tmdbId: string | number,
+    region: string,
+  ): Promise<TmdbWatchProvider[]> {
+    const pathType = mediaType === "tv" ? "tv" : "movie";
+    const url = new URL(
+      `${TMDB_BASE_URL}/${pathType}/${encodeURIComponent(String(tmdbId))}/watch/providers`,
+    );
+    url.searchParams.set("api_key", getApiKey());
+
+    const response = await fetch(url.toString());
+
+    if (!response.ok) {
+      throw new Error(
+        `TMDb watch providers failed with status ${response.status}.`,
+      );
+    }
+
+    const data = (await response.json()) as TmdbWatchProvidersResponse;
+    const country = data.results?.[region.toUpperCase()];
+    const flatrate = country?.flatrate ?? [];
+    return flatrate.map(mapWatchProvider);
   },
 };

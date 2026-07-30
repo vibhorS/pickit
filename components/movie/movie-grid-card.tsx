@@ -5,6 +5,8 @@ import { RecommendationContext } from "@/components/recommendation/recommendatio
 import { PosterImage } from "@/components/ui/poster-image";
 import { getVoteGlyph } from "@/lib/match-engine";
 import { MOTION, staggerItem } from "@/lib/motion";
+import { ProviderChips } from "@/components/streaming/provider-chips";
+import type { WatchAvailability } from "@/lib/streaming/types";
 import type {
   Movie,
   RecommendationMetadata,
@@ -23,6 +25,10 @@ type MovieGridCardProps = {
     vote?: VoteValue;
   }>;
   addedByName?: string;
+  /** Dynamic flatrate availability — never embedded in recommendations. */
+  watchAvailability?: WatchAvailability | null;
+  /** Expanded household streaming provider ids for mismatch messaging. */
+  householdProviderIds?: number[];
   onOpen?: (movie: Movie) => void;
 };
 
@@ -32,6 +38,8 @@ export function MovieGridCard({
   metadata,
   memberRatings,
   addedByName,
+  watchAvailability,
+  householdProviderIds,
   onOpen,
 }: MovieGridCardProps) {
   const vote = memberRatings.find(
@@ -115,6 +123,10 @@ export function MovieGridCard({
               : `Added by ${addedByName}`}
           </p>
         )}
+        <ProviderChips
+          availability={watchAvailability}
+          householdProviderIds={householdProviderIds}
+        />
         <div className="flex items-start justify-between gap-2">
           <p className="text-[0.6875rem] text-netflix-muted/70">
             {movie.rating.toFixed(1)}
