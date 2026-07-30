@@ -9,6 +9,7 @@ import { useMemo, useState } from "react";
 import {
   buildSavePathSummary,
   useSavePathDebugStore,
+  type CloudIifePersistStep,
   type SavePathStep,
 } from "@/lib/debug/save-path-debug";
 import { Surface } from "@/components/ui/surface";
@@ -17,6 +18,17 @@ function truncateId(id: string | null): string {
   if (!id) return "—";
   if (id.length <= 12) return id;
   return `${id.slice(0, 8)}…`;
+}
+
+function lastCompletedAwaitedStep(
+  steps: CloudIifePersistStep[],
+): CloudIifePersistStep | null {
+  const completed = steps.filter(
+    (s) =>
+      s.step !== "8. catch block entered" &&
+      s.step !== "9. final exception",
+  );
+  return completed.length > 0 ? completed[completed.length - 1]! : null;
 }
 
 function resultLabel(step: SavePathStep): string {
@@ -222,6 +234,111 @@ export function SavePathDebugPanel() {
                   ) : null}
                 </div>
               ) : null}
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <p className="font-medium text-zinc-300">
+                Cloud persistence IIFE
+              </p>
+              {snap.cloudIifeSteps.length === 0 ? (
+                <p className="text-zinc-600">
+                  Waiting for cloud IIFE… (local add may still be in flight)
+                </p>
+              ) : (
+                <>
+                  {(() => {
+                    const last = lastCompletedAwaitedStep(snap.cloudIifeSteps);
+                    const failed = snap.cloudIifeSteps.some(
+                      (s) =>
+                        s.step === "8. catch block entered" ||
+                        s.step === "9. final exception",
+                    );
+                    return (
+                      <div
+                        className={`rounded-lg border p-3 font-mono text-[11px] ${
+                          failed
+                            ? "border-red-500/40 bg-red-950/30"
+                            : "border-emerald-500/30 bg-emerald-950/20"
+                        }`}
+                      >
+                        <p className="font-medium text-zinc-200">
+                          LAST completed awaited statement
+                        </p>
+                        <p
+                          className={
+                            failed
+                              ? "mt-1 font-semibold text-red-200"
+                              : "mt-1 font-semibold text-emerald-300"
+                          }
+                        >
+                          {last?.step ?? "(none)"}
+                        </p>
+                        {last ? (
+                          <p className="mt-1 text-[10px] text-zinc-400">
+                            at={last.at}
+                            {" · "}collectionId={last.collectionId}
+                            {" · "}movieId={last.movieId}
+                            {" · "}recommendationId=
+                            {last.recommendationId ?? "—"}
+                          </p>
+                        ) : null}
+                      </div>
+                    );
+                  })()}
+                  <ul className="space-y-2">
+                    {snap.cloudIifeSteps.map((step, index) => {
+                      const isCatch =
+                        step.step === "8. catch block entered" ||
+                        step.step === "9. final exception";
+                      return (
+                        <li
+                          key={`${step.step}-${step.atMs}-${index}`}
+                          className={`rounded border p-2 font-mono text-[10px] ${
+                            isCatch
+                              ? "border-red-500/40 bg-red-950/20"
+                              : "border-zinc-800 bg-black/20"
+                          }`}
+                        >
+                          <p
+                            className={
+                              isCatch
+                                ? "font-semibold text-red-200"
+                                : "font-semibold text-zinc-200"
+                            }
+                          >
+                            {step.step}
+                          </p>
+                          <p className="mt-0.5 text-zinc-500">
+                            timestamp: {step.at}
+                          </p>
+                          <p className="text-zinc-400">
+                            collectionId: {step.collectionId}
+                          </p>
+                          <p className="text-zinc-400">
+                            movieId: {step.movieId}
+                          </p>
+                          <p className="text-zinc-400">
+                            recommendationId: {step.recommendationId ?? "—"}
+                          </p>
+                          {step.error ? (
+                            <div className="mt-1 space-y-0.5 text-red-300">
+                              <p>
+                                exception: {step.error.type}:{" "}
+                                {step.error.message}
+                              </p>
+                              {step.error.stack ? (
+                                <pre className="max-h-40 overflow-auto whitespace-pre-wrap text-red-300/80">
+                                  {step.error.stack}
+                                </pre>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </>
+              )}
             </div>
 
             {snap.collectionPipeline ? (

@@ -477,6 +477,21 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                   "entered",
                   `collectionId=${collectionId}`,
                 );
+                // TEMPORARY — cloud IIFE await timeline for write diagnosis
+                let cloudIifeRecommendationId: string | null = null;
+                const recordIife = (
+                  step: Parameters<typeof savePathDebug.recordCloudIife>[0]["step"],
+                  error?: unknown,
+                ) => {
+                  savePathDebug.recordCloudIife({
+                    step,
+                    collectionId,
+                    movieId: movie.id,
+                    recommendationId: cloudIifeRecommendationId,
+                    error,
+                  });
+                };
+                recordIife("1. entered cloud IIFE");
                 try {
                   const { assertStage, recordRepoInstance } = await import(
                     "@/lib/sync/save-assertions"
@@ -534,6 +549,7 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                   // ORIGINAL assignment of CloudRecommendation.id for Save.
                   // Must be a bare UUID — never a prefixed id.
                   const recommendationId = crypto.randomUUID();
+                  cloudIifeRecommendationId = recommendationId;
                   console.error("REC ID CREATION", {
                     recommendationId,
                     file: FILE,
@@ -686,6 +702,7 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                       `collectionId=${collectionId}`,
                     );
                     const existingList = await repos.lists.getById(collectionId);
+                    recordIife("2. repos.lists.getById completed");
                     savePathDebug.branch(
                       "Condition: existingList",
                       existingList ? "passed" : "failed",
@@ -700,13 +717,16 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                         collectionId,
                       );
                       await repos.lists.upsert(listPayload);
+                      recordIife("3. repos.lists.upsert completed");
                     }
                     savePathDebug.branch(
                       "Await: repos.movies.upsert",
                       "await",
                       movie.id,
                     );
+                    recordIife("4. repos.movies.upsert entered");
                     await repos.movies.upsert(movie);
+                    recordIife("5. repos.movies.upsert returned");
 
                     savePathDebug.branch(
                       "Condition: navigator.onLine",
@@ -747,8 +767,10 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                       "await",
                       rec.id,
                     );
+                    recordIife("6. repos.recommendations.upsert entered");
                     // Stages 4–9 are asserted inside CloudRecommendationRepository.upsert
                     const saved = await repos.recommendations.upsert(rec);
+                    recordIife("7. repos.recommendations.upsert returned");
                     savePathDebug.markListIdWritten(saved.listId);
                     savePathDebug.branch(
                       "repos.recommendations.upsert returned",
@@ -797,6 +819,8 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                   } catch (err) {
                     const message =
                       err instanceof Error ? err.message : "Cloud save failed";
+                    recordIife("8. catch block entered", err);
+                    recordIife("9. final exception", err);
                     recordStage(trace, "pipeline", "FAILED", message);
                     console.error("[SAVE-ASSERT] cloud persist stopped", err);
                     savePathDebug.exit({
@@ -817,6 +841,15 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
                   }
                 } catch (err) {
                   // Surface any previously uncaught IIFE failure (including rethrows).
+                  const alreadyCaught = savePathDebug
+                    .snapshot()
+                    .cloudIifeSteps.some(
+                      (s) => s.step === "8. catch block entered",
+                    );
+                  if (!alreadyCaught) {
+                    recordIife("8. catch block entered", err);
+                    recordIife("9. final exception", err);
+                  }
                   if (!savePathDebug.snapshot().firstExit) {
                     savePathDebug.exit({
                       reason: `CATCH: cloud persist IIFE aborted — ${

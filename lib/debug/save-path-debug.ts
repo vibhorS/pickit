@@ -108,6 +108,28 @@ export type SavePathCollectionPipeline = {
   firstDivergence: string | null;
 };
 
+/** Ordered steps inside the cloud persistence IIFE (one save attempt). */
+export type CloudIifePersistStepName =
+  | "1. entered cloud IIFE"
+  | "2. repos.lists.getById completed"
+  | "3. repos.lists.upsert completed"
+  | "4. repos.movies.upsert entered"
+  | "5. repos.movies.upsert returned"
+  | "6. repos.recommendations.upsert entered"
+  | "7. repos.recommendations.upsert returned"
+  | "8. catch block entered"
+  | "9. final exception";
+
+export type CloudIifePersistStep = {
+  step: CloudIifePersistStepName;
+  at: string;
+  atMs: number;
+  collectionId: string;
+  movieId: string;
+  recommendationId: string | null;
+  error: SavePathStageError | null;
+};
+
 export type SavePathDebugSnapshot = {
   startedAt: string | null;
   startedAtMs: number | null;
@@ -115,6 +137,8 @@ export type SavePathDebugSnapshot = {
   branches: SavePathBranchEvent[];
   firstExit: SavePathExit | null;
   collectionPipeline: SavePathCollectionPipeline | null;
+  /** TEMPORARY — cloud IIFE await timeline for write-failure diagnosis. */
+  cloudIifeSteps: CloudIifePersistStep[];
   birthId: string | null;
   birthObjectId: string | null;
   idChanges: Array<{
@@ -142,6 +166,7 @@ const EMPTY: SavePathDebugSnapshot = {
   branches: [],
   firstExit: null,
   collectionPipeline: null,
+  cloudIifeSteps: [],
   birthId: null,
   birthObjectId: null,
   idChanges: [],
@@ -328,6 +353,13 @@ type SavePathDebugStore = SavePathDebugSnapshot & {
   patchCollectionPipeline: (
     patch: Partial<SavePathCollectionPipeline>,
   ) => void;
+  recordCloudIife: (input: {
+    step: CloudIifePersistStepName;
+    collectionId: string;
+    movieId: string;
+    recommendationId?: string | null;
+    error?: unknown;
+  }) => void;
 };
 
 function classifyCollectionSource(
@@ -863,6 +895,36 @@ export const useSavePathDebugStore = create<SavePathDebugStore>((set, get) => ({
       });
     }
   },
+
+  recordCloudIife: (input) => {
+    const state = get();
+    const atMs = nowMs();
+    let startedAtMs = state.startedAtMs;
+    let startedAt = state.startedAt;
+    if (startedAtMs == null) {
+      startedAtMs = atMs;
+      startedAt = new Date().toISOString();
+    }
+    const entry: CloudIifePersistStep = {
+      step: input.step,
+      at: new Date().toISOString(),
+      atMs,
+      collectionId: input.collectionId,
+      movieId: input.movieId,
+      recommendationId: input.recommendationId ?? null,
+      error: input.error != null ? toStageError(input.error) : null,
+    };
+    // New IIFE entry starts a fresh timeline for that save attempt.
+    const cloudIifeSteps =
+      input.step === "1. entered cloud IIFE"
+        ? [entry]
+        : [...state.cloudIifeSteps, entry];
+    set({
+      startedAt,
+      startedAtMs,
+      cloudIifeSteps,
+    });
+  },
 }));
 
 /** Imperative helpers so non-React call sites stay one-liners. */
@@ -919,6 +981,13 @@ export const savePathDebug = {
     useSavePathDebugStore.getState().setCollectionPipeline(pipeline),
   patchCollectionPipeline: (patch: Partial<SavePathCollectionPipeline>) =>
     useSavePathDebugStore.getState().patchCollectionPipeline(patch),
+  recordCloudIife: (input: {
+    step: CloudIifePersistStepName;
+    collectionId: string;
+    movieId: string;
+    recommendationId?: string | null;
+    error?: unknown;
+  }) => useSavePathDebugStore.getState().recordCloudIife(input),
   markListIdWritten: (listId: string) =>
     useSavePathDebugStore.getState().patchCollectionPipeline({
       listIdsWritten: [listId],
@@ -932,6 +1001,7 @@ export const savePathDebug = {
       branches: s.branches,
       firstExit: s.firstExit,
       collectionPipeline: s.collectionPipeline,
+      cloudIifeSteps: s.cloudIifeSteps,
       birthId: s.birthId,
       birthObjectId: s.birthObjectId,
       idChanges: s.idChanges,
