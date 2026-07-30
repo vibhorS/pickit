@@ -329,27 +329,12 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     role: "owner" | "member";
     joinedAt: string;
   }>;
-  /** TEMPORARY boot-trace metadata — not used by production UI. */
-  __bootTrace?: {
-    rawRecommendationCount: number;
-    skipped: Array<{
-      id: string;
-      listId: string;
-      movieId: string;
-      reason: string;
-    }>;
-    movieIdsRequested: string[];
-    movieIdsResolved: string[];
-  };
 }> {
-  const ANIMATED_ID = "collection-80bc5b34-2a3f-4fb2-8be9-036efd0e05e9";
-  const { bootTrace } = await import("@/lib/debug/boot-trace");
-
   const repos = getCloudRepositories();
   const crew = await repos.crew.getActiveCrewForUser(userId);
   const crewId = crew?.id ?? null;
 
-  let lists = crewId
+  const lists = crewId
     ? await repos.lists.listForCrew(crewId)
     : await repos.lists.listForOwner(userId);
 
@@ -374,36 +359,11 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     }
   }
 
-  bootTrace.record({
-    stage: "loadCloudSnapshot: lists fetched",
-    operation: "READ",
-    detail: `lists=${lists.length} crewId=${crewId ?? "null"} ids=${JSON.stringify(lists.map((l) => l.id))}`,
-    byCollection: {},
-    catalogIds: lists.map((l) => l.id),
-    collectionNames: Object.fromEntries(
-      lists.map((list) => [list.id, list.name]),
-    ),
-  });
-
   const listIds = lists.map((list) => list.id);
   const [recommendations, ratings] = await Promise.all([
     repos.recommendations.listForListIds(listIds),
     repos.ratings.listForListIds(listIds),
   ]);
-
-  bootTrace.record({
-    stage: "loadCloudSnapshot: recommendations fetched",
-    operation: "READ",
-    detail: `recommendations=${recommendations.length} ratings=${ratings.length}`,
-    byCollection: {},
-    catalogIds: listIds,
-    recommendationMeta: recommendations.map((item) => ({
-      id: item.id,
-      listId: item.listId,
-      movieId: item.movieId,
-      included: true,
-    })),
-  });
 
   const memberProfilesRaw = crewId
     ? await repos.crew.listMemberProfiles(crewId)
@@ -419,15 +379,6 @@ export async function loadCloudSnapshot(userId: string): Promise<{
   const movies = await repos.movies.getByIds(movieIds);
   const movieMap = new Map(movies.map((movie) => [movie.id, movie]));
 
-  const missingMovieIds = movieIds.filter((id) => !movieMap.has(id));
-  bootTrace.record({
-    stage: "loadCloudSnapshot: movies.getByIds",
-    operation: "READ",
-    detail: `requested=${movieIds.length} resolved=${movies.length} missing=[${missingMovieIds.join(", ")}]`,
-    byCollection: {},
-    catalogIds: listIds,
-  });
-
   const byCollection: Record<
     string,
     Array<{
@@ -440,39 +391,9 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     }>
   > = {};
 
-  const skipped: Array<{
-    id: string;
-    listId: string;
-    movieId: string;
-    reason: string;
-  }> = [];
-  const recommendationMeta: Array<{
-    id: string;
-    listId: string;
-    movieId: string;
-    included: boolean;
-    skipReason?: string | null;
-  }> = [];
-
   for (const item of recommendations) {
     const movie = movieMap.get(item.movieId);
-    if (!movie) {
-      const reason = `movieMap miss for movieId=${item.movieId}`;
-      skipped.push({
-        id: item.id,
-        listId: item.listId,
-        movieId: item.movieId,
-        reason,
-      });
-      recommendationMeta.push({
-        id: item.id,
-        listId: item.listId,
-        movieId: item.movieId,
-        included: false,
-        skipReason: reason,
-      });
-      continue;
-    }
+    if (!movie) continue;
     if (!byCollection[item.listId]) byCollection[item.listId] = [];
     byCollection[item.listId].push({
       movie,
@@ -485,45 +406,7 @@ export async function loadCloudSnapshot(userId: string): Promise<{
       addedAt: item.createdAt,
       recommendationId: item.id,
     });
-    recommendationMeta.push({
-      id: item.id,
-      listId: item.listId,
-      movieId: item.movieId,
-      included: true,
-    });
   }
-
-  bootTrace.record({
-    stage: "loadCloudSnapshot: byCollection built",
-    operation: "SNAPSHOT",
-    detail: `included=${recommendations.length - skipped.length} skipped=${skipped.length} skipDetail=${JSON.stringify(skipped)}`,
-    byCollection,
-    catalogIds: listIds,
-    collectionNames: Object.fromEntries(
-      lists.map((list) => [list.id, list.name]),
-    ),
-    recommendationMeta,
-  });
-  bootTrace.recordUi({
-    stage: "Animated read path: after loadCloudSnapshot",
-    rows: [
-      {
-        "Collection ID": ANIMATED_ID,
-        "snapshot.byCollection movie IDs": (
-          byCollection[ANIMATED_ID] ?? []
-        ).map((item) => item.movie.id),
-        "snapshot.byCollection titles": (
-          byCollection[ANIMATED_ID] ?? []
-        ).map((item) => item.movie.title),
-        "snapshot.byCollection recommendation IDs": (
-          byCollection[ANIMATED_ID] ?? []
-        ).map((item) => item.recommendationId ?? null),
-        "snapshot.byCollection movie count": (
-          byCollection[ANIMATED_ID] ?? []
-        ).length,
-      },
-    ],
-  });
 
   const collectionLists: Collection[] = lists.map((list) => ({
     id: list.id,
@@ -589,11 +472,5 @@ export async function loadCloudSnapshot(userId: string): Promise<{
     crewId,
     memberProfiles,
     memberships,
-    __bootTrace: {
-      rawRecommendationCount: recommendations.length,
-      skipped,
-      movieIdsRequested: movieIds,
-      movieIdsResolved: movies.map((m) => m.id),
-    },
   };
 }

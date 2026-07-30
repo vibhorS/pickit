@@ -25,17 +25,11 @@ import type {
 } from "@/lib/capture/intelligence/types";
 import { fadeUp, MOTION } from "@/lib/motion";
 import { analytics } from "@/lib/observability/analytics";
-import { assertStage } from "@/lib/sync/save-assertions";
-import {
-  buildCollectionRef,
-  savePathDebug,
-} from "@/lib/debug/save-path-debug";
 import type { Collection } from "@/lib/types";
 import {
   filterInboxItems,
   useCaptureInboxStore,
 } from "@/store/capture-inbox-store";
-import { useCollaborationStore } from "@/store/collaboration-store";
 import {
   resolveCollectionCatalog,
 } from "@/lib/collections/resolve-catalog";
@@ -480,137 +474,16 @@ export function CaptureIntelligenceClient({
   };
 
   const onImport = () => {
-    savePathDebug.mark("onImport");
-    console.error("CALLGRAPH ✓ onImport entered", {
-      file: "components/capture/intelligence/capture-intelligence-client.tsx",
-    });
-    console.info("STAGE 2: Save handler entered");
-    try {
-      assertStage(
-        2,
-        "Save handler entered",
-        Boolean(active),
-        active
-          ? JSON.stringify({
-              captureId: active.id,
-              selectedCollectionIds: active.selectedCollectionIds,
-              createCollectionNames: active.createCollectionNames,
-              selectedMatches: active.matches.filter(
-                (m) => m.selected && !m.rejected && m.movie,
-              ).length,
-            })
-          : "active capture is null — handler aborted",
-      );
-    } catch (err) {
-      console.error("[SAVE-ASSERT] stopped in onImport stage 2", err);
-      return;
-    }
-
     if (!active) return;
     setImporting(true);
     try {
-      const seedIds = new Set(seedCollections.map((c) => c.id));
-      const createdIds = new Set(createdCollections.map((c) => c.id));
-      const memberships = useCollaborationStore.getState().memberships;
-      const activeUserId = useCollaborationStore.getState().activeUserId;
-
-      const homeCatalog = collections
-        .filter((collection) => {
-          const collectionMemberships = memberships.filter(
-            (m) => m.collectionId === collection.id,
-          );
-          return (
-            collectionMemberships.length === 0 ||
-            collectionMemberships.some((m) => m.userId === activeUserId)
-          );
-        })
-        .map((c) => ({
-          id: c.id,
-          name: c.name,
-          source: seedIds.has(c.id)
-            ? "seed-mock"
-            : c.id.startsWith("demo-") || c.id.startsWith("collection-")
-              ? "cloud-hydrated"
-              : "created-local",
-        }));
-
-      const captureCatalog = collections.map((c) => ({
-        id: c.id,
-        name: c.name,
-        source: seedIds.has(c.id)
-          ? "seed-mock"
-          : c.id.startsWith("demo-") || c.id.startsWith("collection-")
-            ? "cloud-hydrated"
-            : "created-local",
-      }));
-
-      const uiSelected = [
-        ...active.selectedCollectionIds.map((id) => {
-          const c = collections.find((row) => row.id === id);
-          return buildCollectionRef({
-            id,
-            name: c?.name ?? `(missing:${id})`,
-            emoji: c?.emoji,
-            seedIds,
-            createdIds,
-            flags: { inSelectedIds: true, afterResolve: true },
-          });
-        }),
-        ...active.createCollectionNames.map((name) =>
-          buildCollectionRef({
-            id: `pending-create:${name}`,
-            name,
-            seedIds,
-            createdIds,
-            flags: { inCreateNames: true },
-          }),
-        ),
-      ];
-
-      savePathDebug.setCollectionPipeline({
-        uiSelected,
-        selectedCollectionIds: [...active.selectedCollectionIds],
-        createCollectionNames: [...active.createCollectionNames],
-        afterCreateResolve: [],
-        afterMembershipFilter: [],
-        added: [],
-        already: [],
-        listIdsWritten: [],
-        homeCatalog,
-        captureCatalog,
-        firstDivergence: null,
-      });
-
       const collectionIds = [...active.selectedCollectionIds];
       for (const name of active.createCollectionNames) {
         const created = createCollection(name);
         collectionIds.push(created.id);
-        savePathDebug.patchCollectionPipeline({
-          uiSelected: [
-            ...uiSelected.filter((r) => r.collectionId !== `pending-create:${name}`),
-            buildCollectionRef({
-              id: created.id,
-              name: created.name,
-              emoji: created.emoji,
-              seedIds,
-              createdIds: new Set([...createdIds, created.id]),
-              flags: {
-                inCreateNames: true,
-                afterResolve: true,
-              },
-            }),
-          ],
-        });
       }
       const uniqueIds = Array.from(new Set(collectionIds));
-      savePathDebug.patchCollectionPipeline({
-        afterCreateResolve: uniqueIds,
-      });
-      console.info("STAGE 2b: Collections resolved", { uniqueIds });
       if (uniqueIds.length === 0) {
-        console.error(
-          "[SAVE-ASSERT] FIRST FAILURE after STAGE 2: no collection IDs — Repository.save path will never run",
-        );
         throw new Error(
           "SAVE PIPELINE STOPPED: no collection IDs resolved",
         );
@@ -627,11 +500,7 @@ export function CaptureIntelligenceClient({
         });
         imported.push(match.movie.id);
       }
-      console.info("STAGE 2c: Movies handed to store", { imported });
       if (imported.length === 0) {
-        console.error(
-          "[SAVE-ASSERT] FIRST FAILURE after STAGE 2: no selected movies — Repository.save path will never run",
-        );
         throw new Error(
           "SAVE PIPELINE STOPPED: no selected matches to persist",
         );
@@ -654,12 +523,8 @@ export function CaptureIntelligenceClient({
         movieIds: imported,
         collectionIds: uniqueIds,
       });
-      // STAGE 10 is asserted only after Supabase insert returns (see cloud repo / store).
-      console.info(
-        "[SAVE-ASSERT] Local UI celebration shown — awaiting STAGE 3–9 from cloud path",
-      );
     } catch (err) {
-      console.error("[SAVE-ASSERT] stopped in onImport", err);
+      console.error("Failed to import recommendations", err);
     } finally {
       setImporting(false);
     }

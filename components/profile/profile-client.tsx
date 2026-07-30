@@ -15,12 +15,10 @@ import {
   Users,
   Wrench,
 } from "lucide-react";
-import { Component, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { CrewPanel } from "@/components/crew/crew-panel";
 import { PartnerPanel } from "@/components/partner/partner-panel";
 import { SyncDashboard } from "@/components/profile/sync-dashboard";
-import { SavePathDebugPanel } from "@/components/profile/save-path-debug-panel";
-import { BootTracePanel } from "@/components/profile/boot-trace-panel";
 import { BetaDashboard } from "@/components/profile/beta-dashboard";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { Badge } from "@/components/ui/badge";
@@ -90,63 +88,6 @@ type SettingsSection =
   | "about"
   | "developer";
 
-type DeveloperChildKey = "savePath" | "sync" | "bootTrace";
-
-class DashboardChildErrorBoundary extends Component<
-  {
-    name: string;
-    onError: (name: DeveloperChildKey, error: string) => void;
-    childKey: DeveloperChildKey;
-    children: ReactNode;
-  },
-  { hasError: boolean; message: string | null }
-> {
-  state = { hasError: false, message: null as string | null };
-
-  static getDerivedStateFromError(error: Error) {
-    return {
-      hasError: true,
-      message: error.message || String(error),
-    };
-  }
-
-  componentDidCatch(error: Error) {
-    this.props.onError(this.props.childKey, error.message || String(error));
-  }
-
-  render() {
-    if (this.state.hasError) {
-      return (
-        <div className="rounded-lg border border-red-500/40 bg-red-950/30 p-3">
-          <p className="text-sm font-medium text-red-200">
-            {this.props.name} failed
-          </p>
-          <p className="mt-1 font-mono text-xs text-red-300">
-            {this.state.message}
-          </p>
-        </div>
-      );
-    }
-    return this.props.children;
-  }
-}
-
-function DashboardMountProbe({
-  name,
-  onMount,
-  children,
-}: {
-  name: DeveloperChildKey;
-  onMount: (name: DeveloperChildKey) => void;
-  children: ReactNode;
-}) {
-  useEffect(() => {
-    onMount(name);
-  }, [name, onMount]);
-
-  return <>{children}</>;
-}
-
 export function ProfileClient() {
   const profile = useAuthStore((state) => state.profile);
   const syncStatus = useAuthStore((state) => state.syncStatus);
@@ -170,22 +111,7 @@ export function ProfileClient() {
   const [developerUnlocked, setDeveloperUnlocked] = useState(false);
   const [displayName, setDisplayName] = useState("");
   const [toast, setToast] = useState<string | null>(null);
-  const [profileMounted, setProfileMounted] = useState(false);
-  const [childMounted, setChildMounted] = useState<Record<DeveloperChildKey, boolean>>({
-    savePath: false,
-    sync: false,
-    bootTrace: false,
-  });
-  const [childErrors, setChildErrors] = useState<Record<DeveloperChildKey, string | null>>({
-    savePath: null,
-    sync: null,
-    bootTrace: null,
-  });
   const stats = useCollectionStats("date-night");
-
-  useEffect(() => {
-    setProfileMounted(true);
-  }, []);
 
   useEffect(() => {
     if (profile) setDisplayName(profile.displayName);
@@ -380,84 +306,6 @@ export function ProfileClient() {
                 <Trash2 className="mr-2 size-4" aria-hidden="true" />
                 Delete account
               </Button>
-            </div>
-
-            <div className="mt-10 space-y-6">
-              <Surface>
-                <p className="text-sm font-semibold text-white">
-                  Developer Dashboard
-                </p>
-                <p className="mt-2 font-mono text-xs text-zinc-300">
-                  Profile mounted: {profileMounted ? "YES" : "NO"}
-                  {"\n"}
-                  Developer section mounted: YES
-                  {"\n"}
-                  Children:
-                  {"\n"}✓ Save Path Diagnosis:{" "}
-                  {childMounted.savePath ? "YES" : "NO"}
-                  {childErrors.savePath
-                    ? ` (ERROR: ${childErrors.savePath})`
-                    : ""}
-                  {"\n"}✓ Sync Dashboard: {childMounted.sync ? "YES" : "NO"}
-                  {childErrors.sync ? ` (ERROR: ${childErrors.sync})` : ""}
-                  {"\n"}✓ Boot Trace:{" "}
-                  {childMounted.bootTrace ? "YES" : "NO"}
-                  {childErrors.bootTrace
-                    ? ` (ERROR: ${childErrors.bootTrace})`
-                    : ""}
-                </p>
-              </Surface>
-
-              <DashboardChildErrorBoundary
-                name="Save Path Diagnosis"
-                childKey="savePath"
-                onError={(name, error) =>
-                  setChildErrors((prev) => ({ ...prev, [name]: error }))
-                }
-              >
-                <DashboardMountProbe
-                  name="savePath"
-                  onMount={(name) =>
-                    setChildMounted((prev) => ({ ...prev, [name]: true }))
-                  }
-                >
-                  <SavePathDebugPanel />
-                </DashboardMountProbe>
-              </DashboardChildErrorBoundary>
-
-              <DashboardChildErrorBoundary
-                name="Sync Dashboard"
-                childKey="sync"
-                onError={(name, error) =>
-                  setChildErrors((prev) => ({ ...prev, [name]: error }))
-                }
-              >
-                <DashboardMountProbe
-                  name="sync"
-                  onMount={(name) =>
-                    setChildMounted((prev) => ({ ...prev, [name]: true }))
-                  }
-                >
-                  <SyncDashboard />
-                </DashboardMountProbe>
-              </DashboardChildErrorBoundary>
-
-              <DashboardChildErrorBoundary
-                name="Boot Trace"
-                childKey="bootTrace"
-                onError={(name, error) =>
-                  setChildErrors((prev) => ({ ...prev, [name]: error }))
-                }
-              >
-                <DashboardMountProbe
-                  name="bootTrace"
-                  onMount={(name) =>
-                    setChildMounted((prev) => ({ ...prev, [name]: true }))
-                  }
-                >
-                  <BootTracePanel />
-                </DashboardMountProbe>
-              </DashboardChildErrorBoundary>
             </div>
           </section>
         )}
@@ -764,6 +612,9 @@ export function ProfileClient() {
                   </div>
                 )}
                 <BetaDashboard />
+                <div className="mt-10">
+                  <SyncDashboard />
+                </div>
               </>
             )}
           </section>
