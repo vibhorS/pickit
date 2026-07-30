@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { MOTION } from "@/lib/motion";
 import { useCollaborationStore } from "@/store/collaboration-store";
 import { useCollectionStats } from "@/store/collection-stats-selector";
-import { useLocalCollectionStore } from "@/store/local-collection-store";
+import { useLocalCollectionStore, EMPTY_LOCAL_ITEMS } from "@/store/local-collection-store";
 
 type CollectionCardProps = {
   collection: Collection;
@@ -19,7 +19,7 @@ export function CollectionCard({ collection }: CollectionCardProps) {
   const movieCount = stats.totalMovies;
   const movieLabel = movieCount === 1 ? "1 movie" : `${movieCount} movies`;
   const localItems = useLocalCollectionStore(
-    (state) => state.byCollection[collection.id] ?? [],
+    (state) => state.byCollection[collection.id] ?? EMPTY_LOCAL_ITEMS,
   );
   const posterUrls = localItems
     .map((item) => item.movie.posterUrl)

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { queryKeys } from "@/hooks/use-cloud-data";
 import { getCloudRepositories } from "@/lib/repositories/cloud";
@@ -31,7 +31,6 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
   const profile = useAuthStore((state) => state.profile);
   const setSyncMeta = useAuthStore((state) => state.setCloudSyncMeta);
   const queryClient = useQueryClient();
-  const bootedFor = useRef<string | null>(null);
 
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
@@ -48,32 +47,38 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!profile || !isSupabaseConfigured()) return;
-    if (bootedFor.current === profile.id) return;
-    bootedFor.current = profile.id;
     let cancelled = false;
     const unsubs: Array<() => void> = [];
+    const userId = profile.id;
 
     async function boot() {
       try {
-        await migrateLocalDataToSupabase(profile!.id);
+        try {
+          await migrateLocalDataToSupabase(userId);
+        } catch (error) {
+          // One-time migration must not block cloud hydrate (e.g. RLS on data_migrations).
+          logger.error("Cloud migration failed", {
+            message: error instanceof Error ? error.message : "unknown",
+          });
+        }
         if (cancelled) return;
 
         await crewService.ensureCrew(profile!);
         if (cancelled) return;
 
         const [snapshot, crewSnapshot] = await Promise.all([
-          loadCloudSnapshot(profile!.id),
-          crewService.getSnapshot(profile!.id),
+          loadCloudSnapshot(userId),
+          crewService.getSnapshot(userId),
         ]);
         if (cancelled) return;
 
-        mergeCloudSnapshot(profile!.id, snapshot);
+        mergeCloudSnapshot(userId, snapshot);
 
         useCrewStore.getState().setSnapshot(crewSnapshot);
 
         if (crewSnapshot) {
           void crewService.setPresence(
-            profile!.id,
+            userId,
             "online",
             crewSnapshot.crew.id,
           );
@@ -84,9 +89,7 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
           if (!cancelled) useCrewStore.getState().setPresence(presence);
         }
 
-        const prefs = await getCloudRepositories().preferences.get(
-          profile!.id,
-        );
+        const prefs = await getCloudRepositories().preferences.get(userId);
         if (prefs) {
           useSettingsStore.setState({
             appearance: prefs.appearance,
@@ -96,10 +99,10 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
         }
 
         void queryClient.invalidateQueries({
-          queryKey: queryKeys.lists(profile!.id),
+          queryKey: queryKeys.lists(userId),
         });
         void queryClient.invalidateQueries({
-          queryKey: queryKeys.ratings(profile!.id),
+          queryKey: queryKeys.ratings(userId),
         });
 
         const repos = getCloudRepositories();
@@ -110,54 +113,48 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
           unsubs.push(
             repos.crew.subscribe(crewId, () => {
               useSyncStore.getState().recordRealtimeEvent("crew", crewId);
-              void refreshFromCloud(profile!.id, queryClient);
+              void refreshFromCloud(userId, queryClient);
             }),
           );
           unsubs.push(
             repos.lists.subscribeCrew(crewId, () => {
               useSyncStore.getState().recordRealtimeEvent("lists", crewId);
-              void refreshFromCloud(profile!.id, queryClient);
+              void refreshFromCloud(userId, queryClient);
               void queryClient.invalidateQueries({
-                queryKey: queryKeys.lists(profile!.id),
+                queryKey: queryKeys.lists(userId),
               });
             }),
           );
         } else {
           unsubs.push(
-            repos.lists.subscribe(profile!.id, () => {
-              useSyncStore.getState().recordRealtimeEvent(
-                "lists",
-                profile!.id,
-              );
-              void refreshFromCloud(profile!.id, queryClient);
+            repos.lists.subscribe(userId, () => {
+              useSyncStore.getState().recordRealtimeEvent("lists", userId);
+              void refreshFromCloud(userId, queryClient);
               void queryClient.invalidateQueries({
-                queryKey: queryKeys.lists(profile!.id),
+                queryKey: queryKeys.lists(userId),
               });
             }),
           );
         }
 
         unsubs.push(
-          repos.ratings.subscribe(profile!.id, () => {
-            useSyncStore.getState().recordRealtimeEvent(
-              "ratings",
-              profile!.id,
-            );
-            void refreshFromCloud(profile!.id, queryClient);
+          repos.ratings.subscribe(userId, () => {
+            useSyncStore.getState().recordRealtimeEvent("ratings", userId);
+            void refreshFromCloud(userId, queryClient);
             void queryClient.invalidateQueries({
-              queryKey: queryKeys.ratings(profile!.id),
+              queryKey: queryKeys.ratings(userId),
             });
           }),
         );
         unsubs.push(
-          repos.recommendations.subscribe(profile!.id, () => {
+          repos.recommendations.subscribe(userId, () => {
             useSyncStore.getState().recordRealtimeEvent(
               "recommendations",
-              profile!.id,
+              userId,
             );
-            void refreshFromCloud(profile!.id, queryClient);
+            void refreshFromCloud(userId, queryClient);
             void queryClient.invalidateQueries({
-              queryKey: queryKeys.recommendations(profile!.id),
+              queryKey: queryKeys.recommendations(userId),
             });
           }),
         );
@@ -165,19 +162,18 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
         useSyncStore.getState().recordEvent({
           type: "snapshot_applied",
           entity: "boot",
-          entityId: profile!.id,
+          entityId: userId,
           detail: `${snapshot.lists.length} lists, ${Object.values(snapshot.byCollection).flat().length} recs`,
         });
 
         logger.info("Cloud data hydrated", {
-          userId: profile!.id,
+          userId,
           crewId: crewId ?? undefined,
         });
       } catch (error) {
         logger.error("Cloud boot failed", {
           message: error instanceof Error ? error.message : "unknown",
         });
-        bootedFor.current = null;
       }
     }
 
@@ -186,9 +182,7 @@ export function CloudDataProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       useSyncStore.getState().setRealtimeConnected(false);
       for (const unsub of unsubs) unsub();
-      if (profile) {
-        void crewService.setPresence(profile.id, "offline");
-      }
+      void crewService.setPresence(userId, "offline");
     };
   }, [profile, queryClient]);
 

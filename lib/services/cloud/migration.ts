@@ -76,7 +76,11 @@ export async function migrateLocalDataToSupabase(userId: string): Promise<{
   );
   if (alreadyCloud || window.localStorage.getItem(LOCAL_MIGRATION_FLAG) === "done") {
     if (!alreadyCloud) {
-      await repos.migrations.markCompleted(userId, "local-to-cloud-v1");
+      try {
+        await repos.migrations.markCompleted(userId, "local-to-cloud-v1");
+      } catch {
+        // RLS may block marking; local flag is enough to skip retries.
+      }
     }
     return { migrated: false, lists: 0, ratings: 0, recommendations: 0 };
   }
@@ -288,7 +292,15 @@ export async function migrateLocalDataToSupabase(userId: string): Promise<{
     logger.error("Cloud migration failed", {
       message: error instanceof Error ? error.message : "unknown",
     });
-    throw error;
+    // Skip repeated attempts after a hard failure so boot hydrate stays fast.
+    try {
+      window.localStorage.setItem(LOCAL_MIGRATION_FLAG, "done");
+    } catch {
+      // ignore
+    }
+    // Do not rethrow — cloud hydrate must proceed even if one-time migration fails
+    // (e.g. RLS on data_migrations after local cache wipe).
+    return { migrated: false, lists: 0, ratings: 0, recommendations: 0 };
   }
 
   return {
