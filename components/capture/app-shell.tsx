@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Camera, Home, Popcorn, UserRound } from "lucide-react";
+import { Camera, Home, Popcorn } from "lucide-react";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AuthBootstrap } from "@/components/auth/auth-bootstrap";
@@ -17,7 +17,6 @@ import {
   SEED_COLLECTION_IDS,
   useCollaborationStore,
 } from "@/store/collaboration-store";
-import { useAuthStore } from "@/store/auth-store";
 import { useLocalCollectionStore } from "@/store/local-collection-store";
 
 type AppShellProps = {
@@ -173,7 +172,6 @@ function CollaborationMigration() {
 }
 
 function BottomNavigation({ pathname }: { pathname: string }) {
-  const profile = useAuthStore((state) => state.profile);
   const links = [
     {
       href: "/",
@@ -194,12 +192,6 @@ function BottomNavigation({ pathname }: { pathname: string }) {
       active:
         pathname === "/movie-night" ||
         pathname.startsWith("/movie-night"),
-    },
-    {
-      href: "/profile",
-      label: profile?.displayName?.split(" ")[0] || "Profile",
-      icon: UserRound,
-      active: pathname === "/profile",
     },
   ];
 

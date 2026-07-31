@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowRight, Camera, Popcorn } from "lucide-react";
+import { ArrowRight, Camera, Popcorn, UserRound } from "lucide-react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
@@ -11,6 +11,7 @@ import { collectionService } from "@/lib/services/collection-service";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { MOTION } from "@/lib/motion";
 import { analytics } from "@/lib/observability/analytics";
+import { useAuthStore } from "@/store/auth-store";
 import { useLocalCollectionStore } from "@/store/local-collection-store";
 import { useCollaborationStore } from "@/store/collaboration-store";
 import { useCollectionStatsList } from "@/store/collection-stats-selector";
@@ -18,6 +19,7 @@ import { useCollectionStatsList } from "@/store/collection-stats-selector";
 export function HomeClient() {
   const router = useRouter();
   const reduceMotion = useReducedMotion();
+  const profile = useAuthStore((state) => state.profile);
   const [enteringPickMode, setEnteringPickMode] = useState(false);
   const seedCollections = isSupabaseConfigured()
     ? []
@@ -86,9 +88,35 @@ export function HomeClient() {
           className="pointer-events-none absolute -left-16 -top-16 size-56 rounded-full bg-netflix-red/10 blur-3xl"
         />
         <div className="relative">
-          <p className="text-3xl font-bold tracking-[-0.04em] text-white">
-            PickIt<span className="text-netflix-red">.</span>
-          </p>
+          <div className="flex items-start justify-between gap-3">
+            <p className="text-3xl font-bold tracking-[-0.04em] text-white">
+              PickIt<span className="text-netflix-red">.</span>
+            </p>
+            <Link
+              href="/profile"
+              prefetch
+              aria-label="Profile"
+              className="inline-flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-white/[0.06] text-white transition hover:bg-white/[0.1]"
+            >
+              {profile?.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={profile.avatarUrl}
+                  alt=""
+                  className="size-full object-cover"
+                />
+              ) : profile?.displayName ? (
+                <span
+                  className="flex size-full items-center justify-center text-sm font-semibold"
+                  style={{ backgroundColor: profile.color }}
+                >
+                  {profile.displayName.slice(0, 1).toUpperCase()}
+                </span>
+              ) : (
+                <UserRound className="size-5" strokeWidth={1.8} aria-hidden="true" />
+              )}
+            </Link>
+          </div>
           <h1 className="mt-6 text-4xl font-bold leading-[1.02] tracking-[-0.04em] text-white">
             What should we watch tonight?
           </h1>
@@ -119,9 +147,18 @@ export function HomeClient() {
           </div>
 
           <section className="mt-8">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-netflix-red">
-              Recent Collections
-            </p>
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-netflix-red">
+                Recent Collections
+              </p>
+              <Link
+                href="/collections"
+                prefetch
+                className="text-xs font-medium text-netflix-muted transition hover:text-white"
+              >
+                View all →
+              </Link>
+            </div>
             <div className="mt-3 space-y-3">
               {recentCollections.length === 0 ? (
                 <p className="rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4 text-sm text-netflix-muted">
