@@ -86,6 +86,16 @@ export const cloudAuth = {
     await getCloudRepositories().auth.signInWithApple();
   },
 
+  async resetPasswordForEmail(email: string) {
+    assertCloud();
+    await getCloudRepositories().auth.resetPasswordForEmail(email);
+  },
+
+  async updatePassword(password: string) {
+    assertCloud();
+    await getCloudRepositories().auth.updatePassword(password);
+  },
+
   async updateProfile(
     userId: string,
     patch: Partial<
@@ -106,7 +116,9 @@ export const cloudAuth = {
     await getCloudRepositories().auth.deleteAccount(userId);
   },
 
-  onAuthStateChange(callback: (profile: UserProfile | null) => void) {
+  onAuthStateChange(
+    callback: (profile: UserProfile | null, event?: string) => void,
+  ) {
     if (!isSupabaseConfigured()) return () => undefined;
     return getCloudRepositories().auth.onAuthStateChange(callback);
   },

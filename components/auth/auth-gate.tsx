@@ -1,13 +1,16 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
+import { PasswordField } from "@/components/auth/password-field";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PASSWORD_RESET_PATH } from "@/lib/auth/password-reset";
 import { analytics } from "@/lib/observability/analytics";
 import { useAuthStore } from "@/store/auth-store";
 
-type Mode = "sign-in" | "sign-up";
+type Mode = "sign-in" | "sign-up" | "forgot-password";
 
 function friendlyAuthMessage(message: string | null): string | null {
   if (!message) return null;
@@ -32,6 +35,7 @@ function friendlyAuthMessage(message: string | null): string | null {
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
   const profile = useAuthStore((state) => state.profile);
   const error = useAuthStore((state) => state.error);
   const signIn = useAuthStore((state) => state.signIn);
@@ -41,6 +45,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const continueAsGuest = useAuthStore((state) => state.continueAsGuest);
   const clearError = useAuthStore((state) => state.clearError);
   const cloudConfigured = useAuthStore((state) => state.cloudConfigured);
+  const passwordRecoveryPending = useAuthStore(
+    (state) => state.passwordRecoveryPending,
+  );
 
   const [mode, setMode] = useState<Mode>("sign-in");
   const [email, setEmail] = useState("");
@@ -50,7 +57,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
   const [offline, setOffline] = useState(false);
   const uiError = friendlyAuthMessage(error);
 
-  const isPublicRoute = pathname.startsWith("/invite/");
+  const isInviteRoute = pathname.startsWith("/invite/");
+  const isResetPasswordRoute = pathname.startsWith(PASSWORD_RESET_PATH);
+  const isPublicRoute = isInviteRoute || isResetPasswordRoute;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -80,10 +89,27 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     analytics.track("landing_viewed", { route: pathname });
   }, [pathname]);
 
-  if (profile || isPublicRoute) return <>{children}</>;
+  useEffect(() => {
+    if (passwordRecoveryPending && !isResetPasswordRoute) {
+      router.replace(PASSWORD_RESET_PATH);
+    }
+  }, [passwordRecoveryPending, isResetPasswordRoute, router]);
+
+  if (isPublicRoute) return <>{children}</>;
+
+  if (passwordRecoveryPending) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-netflix-black text-netflix-muted">
+        <p className="text-sm tracking-wide">Opening password reset…</p>
+      </div>
+    );
+  }
+
+  if (profile) return <>{children}</>;
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (busy) return;
     setBusy(true);
     clearError();
     try {
@@ -91,7 +117,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         await signIn({ email, password });
         analytics.track("login", { provider: "email" });
         analytics.track("auth_signed_in", { provider: "email" });
-      } else {
+      } else if (mode === "sign-up") {
         await signUp({ email, password, displayName });
         analytics.track("sign_up_completed", { provider: "email" });
         analytics.track("account_created", { provider: "email" });
@@ -123,7 +149,9 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           PickIt
         </p>
         <p className="mt-3 text-center text-sm text-netflix-muted">
-          Stop scrolling. Start watching — together.
+          {mode === "forgot-password"
+            ? "Reset your password"
+            : "Stop scrolling. Start watching — together."}
         </p>
 
         {!cloudConfigured && (
@@ -131,7 +159,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
             role="status"
             className="mt-6 rounded-xl border border-amber-400/20 bg-amber-400/10 px-4 py-3 text-center text-xs leading-relaxed text-amber-100"
           >
-            Cloud sync isn't available yet. You can still use PickIt in local
+            Cloud sync isn&apos;t available yet. You can still use PickIt in local
             mode on this device.
           </p>
         )}
@@ -146,119 +174,146 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
           </p>
         )}
 
-        <form onSubmit={submit} className="mt-10 space-y-4">
-          {mode === "sign-up" && (
-            <Input
-              label="Display name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              required
-              placeholder="Alex"
-              autoComplete="nickname"
-            />
-          )}
-          <Input
-            label="Email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            required
-            autoComplete="email"
-            placeholder="you@email.com"
-          />
-          <Input
-            label="Password"
-            type="password"
-            value={password}
-            onChange={(e) => {
+        {mode === "forgot-password" ? (
+          <ForgotPasswordForm
+            initialEmail={email}
+            onBackToSignIn={() => {
               clearError();
-              setPassword(e.target.value);
+              setMode("sign-in");
             }}
-            required
-            minLength={8}
-            autoComplete={
-              mode === "sign-in" ? "current-password" : "new-password"
-            }
-            placeholder="At least 8 characters"
           />
+        ) : (
+          <>
+            <form onSubmit={submit} className="mt-10 space-y-4">
+              {mode === "sign-up" && (
+                <Input
+                  label="Display name"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  required
+                  placeholder="Alex"
+                  autoComplete="nickname"
+                />
+              )}
+              <Input
+                label="Email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                placeholder="you@email.com"
+              />
+              <PasswordField
+                label="Password"
+                value={password}
+                onChange={(value) => {
+                  clearError();
+                  setPassword(value);
+                }}
+                required
+                minLength={8}
+                autoComplete={
+                  mode === "sign-in" ? "current-password" : "new-password"
+                }
+                placeholder="At least 8 characters"
+              />
 
-          {uiError && (
-            <p className="text-sm text-red-300" role="alert">
-              {uiError}
+              {mode === "sign-in" && (
+                <div className="-mt-1 flex justify-end">
+                  <button
+                    type="button"
+                    className="min-h-11 text-sm text-netflix-muted underline-offset-2 hover:text-white hover:underline"
+                    onClick={() => {
+                      clearError();
+                      setMode("forgot-password");
+                      analytics.track("password_reset_started");
+                    }}
+                  >
+                    Forgot your password?
+                  </button>
+                </div>
+              )}
+
+              {uiError && (
+                <p className="text-sm text-red-300" role="alert">
+                  {uiError}
+                </p>
+              )}
+
+              <Button type="submit" disabled={busy} className="w-full">
+                {busy
+                  ? "Please wait…"
+                  : mode === "sign-in"
+                    ? "Sign in"
+                    : "Create account"}
+              </Button>
+            </form>
+
+            <div className="mt-6 space-y-3">
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => void signInWithGoogle().catch(() => undefined)}
+              >
+                Continue with Google
+              </Button>
+              <Button
+                variant="secondary"
+                className="w-full"
+                onClick={() => void signInWithApple().catch(() => undefined)}
+              >
+                Continue with Apple
+              </Button>
+              <Button
+                variant="ghost"
+                className="w-full"
+                onClick={() => {
+                  void continueAsGuest()
+                    .then(() =>
+                      analytics.track("login", { provider: "guest" }),
+                    )
+                    .catch(() => undefined);
+                }}
+              >
+                Continue as guest
+              </Button>
+            </div>
+
+            <p className="mt-8 text-center text-sm text-netflix-muted">
+              {mode === "sign-in" ? (
+                <>
+                  New here?{" "}
+                  <button
+                    type="button"
+                    className="min-h-11 text-white underline-offset-2 hover:underline"
+                    onClick={() => {
+                      clearError();
+                      analytics.track("sign_up_started", { entry: "auth_gate" });
+                      setMode("sign-up");
+                    }}
+                  >
+                    Create an account
+                  </button>
+                </>
+              ) : (
+                <>
+                  Already have an account?{" "}
+                  <button
+                    type="button"
+                    className="min-h-11 text-white underline-offset-2 hover:underline"
+                    onClick={() => {
+                      clearError();
+                      setMode("sign-in");
+                    }}
+                  >
+                    Sign in
+                  </button>
+                </>
+              )}
             </p>
-          )}
-
-          <Button type="submit" disabled={busy} className="w-full">
-            {busy
-              ? "Please wait…"
-              : mode === "sign-in"
-                ? "Sign in"
-                : "Create account"}
-          </Button>
-        </form>
-
-        <div className="mt-6 space-y-3">
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={() => void signInWithGoogle().catch(() => undefined)}
-          >
-            Continue with Google
-          </Button>
-          <Button
-            variant="secondary"
-            className="w-full"
-            onClick={() => void signInWithApple().catch(() => undefined)}
-          >
-            Continue with Apple
-          </Button>
-          <Button
-            variant="ghost"
-            className="w-full"
-            onClick={() => {
-              void continueAsGuest()
-                .then(() =>
-                  analytics.track("login", { provider: "guest" }),
-                )
-                .catch(() => undefined);
-            }}
-          >
-            Continue as guest
-          </Button>
-        </div>
-
-        <p className="mt-8 text-center text-sm text-netflix-muted">
-          {mode === "sign-in" ? (
-            <>
-              New here?{" "}
-              <button
-                type="button"
-                className="min-h-11 text-white underline-offset-2 hover:underline"
-                onClick={() => {
-                  clearError();
-                  analytics.track("sign_up_started", { entry: "auth_gate" });
-                  setMode("sign-up");
-                }}
-              >
-                Create an account
-              </button>
-            </>
-          ) : (
-            <>
-              Already have an account?{" "}
-              <button
-                type="button"
-                className="min-h-11 text-white underline-offset-2 hover:underline"
-                onClick={() => {
-                  clearError();
-                  setMode("sign-in");
-                }}
-              >
-                Sign in
-              </button>
-            </>
-          )}
-        </p>
+          </>
+        )}
       </div>
     </div>
   );

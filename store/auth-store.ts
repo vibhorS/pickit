@@ -33,6 +33,7 @@ type AuthStore = {
   cloudConfigured: boolean;
   partner: PartnerSnapshot;
   error: string | null;
+  passwordRecoveryPending: boolean;
   bootstrap: () => Promise<void>;
   signUp: (input: {
     email: string;
@@ -43,6 +44,9 @@ type AuthStore = {
   signInWithGoogle: () => Promise<void>;
   signInWithApple: () => Promise<void>;
   continueAsGuest: (displayName?: string) => Promise<void>;
+  requestPasswordReset: (email: string) => Promise<void>;
+  updatePassword: (password: string) => Promise<void>;
+  setPasswordRecoveryPending: (pending: boolean) => void;
   updateProfile: (
     patch: Partial<
       Pick<UserProfile, "displayName" | "avatarUrl" | "color" | "email">
@@ -96,8 +100,12 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   cloudConfigured: false,
   partner: EMPTY_PARTNER,
   error: null,
+  passwordRecoveryPending: false,
 
   setCloudSyncMeta: (syncStatus, pendingOps) => set({ syncStatus, pendingOps }),
+
+  setPasswordRecoveryPending: (pending) =>
+    set({ passwordRecoveryPending: pending }),
 
   bootstrap: async () => {
     if (get().bootstrapping || get().hydrated) return;
@@ -107,15 +115,41 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       set({ cloudConfigured: cloud });
 
       if (cloud) {
+        const recoveryHint =
+          typeof window !== "undefined" &&
+          (window.location.hash.includes("type=recovery") ||
+            window.location.search.includes("type=recovery"));
         const profile = await cloudAuth.restoreSession();
         const session = await cloudAuth.getSession();
         syncActiveUser(profile);
         if (profile) presenceService.start(profile.id);
         notificationService.start();
+
+        cloudAuth.onAuthStateChange((nextProfile, event) => {
+          if (event === "PASSWORD_RECOVERY") {
+            set({ passwordRecoveryPending: true });
+          }
+          if (event === "SIGNED_OUT") {
+            presenceService.stop();
+            set({
+              profile: null,
+              session: null,
+              partner: EMPTY_PARTNER,
+              passwordRecoveryPending: false,
+            });
+            return;
+          }
+          if (nextProfile && !get().passwordRecoveryPending) {
+            syncActiveUser(nextProfile);
+            set({ profile: nextProfile });
+          }
+        });
+
         set({
           profile,
           session,
           partner: EMPTY_PARTNER,
+          passwordRecoveryPending: recoveryHint,
           hydrated: true,
           bootstrapping: false,
         });
@@ -253,6 +287,60 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     }
   },
 
+  requestPasswordReset: async (email) => {
+    set({ error: null });
+    if (!useCloud()) {
+      const message =
+        "Password reset requires cloud authentication. Try again when cloud sync is available.";
+      set({ error: message });
+      throw new AuthError("PROVIDER_UNAVAILABLE", message);
+    }
+    try {
+      await cloudAuth.resetPasswordForEmail(email);
+    } catch (error) {
+      set({
+        error:
+          error instanceof AuthError
+            ? error.message
+            : "We couldn't send a reset email. Please try again.",
+      });
+      throw error;
+    }
+  },
+
+  updatePassword: async (password) => {
+    set({ error: null });
+    if (!useCloud()) {
+      const message = "Password reset requires cloud authentication.";
+      set({ error: message });
+      throw new AuthError("PROVIDER_UNAVAILABLE", message);
+    }
+    try {
+      await cloudAuth.updatePassword(password);
+      const profile = await cloudAuth.restoreSession();
+      const session = await cloudAuth.getSession();
+      if (profile) {
+        syncActiveUser(profile);
+        presenceService.start(profile.id);
+      }
+      set({
+        profile,
+        session,
+        passwordRecoveryPending: false,
+        partner: EMPTY_PARTNER,
+        error: null,
+      });
+    } catch (error) {
+      set({
+        error:
+          error instanceof AuthError
+            ? error.message
+            : "We couldn't update your password. Please try again.",
+      });
+      throw error;
+    }
+  },
+
   updateProfile: async (patch) => {
     const current = get().profile;
     if (!current) return;
@@ -271,6 +359,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       profile: null,
       session: null,
       partner: EMPTY_PARTNER,
+      passwordRecoveryPending: false,
     });
   },
 
@@ -284,6 +373,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       profile: null,
       session: null,
       partner: EMPTY_PARTNER,
+      passwordRecoveryPending: false,
     });
   },
 

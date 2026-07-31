@@ -6,6 +6,7 @@ import {
 import type { Movie, UserProfile } from "@/lib/types";
 import { userToProfile } from "@/lib/types";
 import { AuthError } from "@/lib/auth/auth-service";
+import { getPasswordResetRedirectUrl } from "@/lib/auth/password-reset";
 import { logger } from "@/lib/observability/logger";
 import type {
   AuthRepository,
@@ -434,6 +435,97 @@ function createAuthRepository(): AuthRepository {
       );
     },
 
+    async resetPasswordForEmail(email) {
+      const supabase = getSupabaseBrowserClient();
+      const normalizedEmail = email.trim().toLowerCase();
+      const { error } = await supabase.auth.resetPasswordForEmail(
+        normalizedEmail,
+        { redirectTo: getPasswordResetRedirectUrl() },
+      );
+      if (!error) return;
+
+      const message = error.message.toLowerCase();
+      if (
+        message.includes("rate limit") ||
+        message.includes("over_email_send_rate_limit") ||
+        message.includes("email rate") ||
+        error.status === 429
+      ) {
+        throw new AuthError(
+          "RATE_LIMITED",
+          "Too many reset attempts right now. Please wait a moment and try again.",
+        );
+      }
+      if (
+        message.includes("network") ||
+        message.includes("fetch") ||
+        message.includes("failed to fetch")
+      ) {
+        throw new AuthError(
+          "NETWORK",
+          "We couldn't reach the server. Check your connection and try again.",
+        );
+      }
+      // Do not reveal whether the email exists — treat other errors as success.
+      logger.error("Password reset request soft-failed", {
+        message: error.message.slice(0, 120),
+      });
+    },
+
+    async updatePassword(password) {
+      const supabase = getSupabaseBrowserClient();
+      const { data: sessionData, error: sessionError } =
+        await supabase.auth.getSession();
+      if (sessionError || !sessionData.session) {
+        throw new AuthError(
+          "SESSION_EXPIRED",
+          "This reset link is invalid or has expired. Request a new one.",
+        );
+      }
+
+      const { error } = await supabase.auth.updateUser({ password });
+      if (!error) return;
+
+      const message = error.message.toLowerCase();
+      if (
+        message.includes("session") ||
+        message.includes("expired") ||
+        message.includes("invalid") ||
+        message.includes("not authenticated")
+      ) {
+        throw new AuthError(
+          "SESSION_EXPIRED",
+          "This reset link is invalid or has expired. Request a new one.",
+        );
+      }
+      if (message.includes("same") || message.includes("different")) {
+        throw new AuthError(
+          "WEAK_PASSWORD",
+          "Choose a new password that is different from your current one.",
+        );
+      }
+      if (message.includes("password") || message.includes("weak")) {
+        throw new AuthError(
+          "WEAK_PASSWORD",
+          "Your password needs to be at least 8 characters.",
+        );
+      }
+      if (
+        message.includes("network") ||
+        message.includes("fetch") ||
+        message.includes("failed to fetch")
+      ) {
+        throw new AuthError(
+          "NETWORK",
+          "We couldn't reach the server. Check your connection and try again.",
+        );
+      }
+      throw new AuthError(
+        "UNKNOWN",
+        "We couldn't update your password. Please try again.",
+      );
+    },
+
     async updateProfile(userId, patch) {
       const supabase = getSupabaseBrowserClient();
       const { data, error } = await supabase
@@ -481,7 +573,7 @@ function createAuthRepository(): AuthRepository {
       const supabase = getSupabaseBrowserClient();
       const { data } = supabase.auth.onAuthStateChange(async (event, session) => {
         if (!session?.user) {
-          callback(null);
+          callback(null, event);
           return;
         }
         try {
@@ -495,6 +587,7 @@ function createAuthRepository(): AuthRepository {
                   session.user.email ??
                   "User",
               }),
+            event,
           );
         } catch {
           callback(
@@ -505,9 +598,9 @@ function createAuthRepository(): AuthRepository {
                 session.user.email ??
                 "User",
             }),
+            event,
           );
         }
-        void event;
       });
       return () => data.subscription.unsubscribe();
     },

@@ -70,6 +70,8 @@ export type AuthRepository = {
   continueAsGuest(displayName?: string): Promise<UserProfile>;
   signInWithGoogle(): Promise<void>;
   signInWithApple(): Promise<void>;
+  resetPasswordForEmail(email: string): Promise<void>;
+  updatePassword(password: string): Promise<void>;
   updateProfile(
     userId: string,
     patch: Partial<
@@ -79,7 +81,7 @@ export type AuthRepository = {
   logout(): Promise<void>;
   deleteAccount(userId: string): Promise<void>;
   onAuthStateChange(
-    callback: (profile: UserProfile | null) => void,
+    callback: (profile: UserProfile | null, event?: string) => void,
   ): () => void;
 };
 
