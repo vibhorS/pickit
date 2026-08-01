@@ -1,25 +1,35 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { PasswordField } from "@/components/auth/password-field";
 import { Button } from "@/components/ui/button";
-import { AuthError } from "@/lib/auth/auth-service";
-import { cloudAuth } from "@/lib/auth/cloud-auth";
 import {
   MIN_PASSWORD_LENGTH,
-  PASSWORD_RESET_PATH,
   validateNewPassword,
 } from "@/lib/auth/password-reset";
-import { isSupabaseConfigured } from "@/lib/supabase/client";
+import { cloudAuth } from "@/lib/auth/cloud-auth";
+import {
+  getSupabaseBrowserClient,
+  isSupabaseConfigured,
+} from "@/lib/supabase/client";
 import { analytics } from "@/lib/observability/analytics";
 import { useAuthStore } from "@/store/auth-store";
 
 type ResetPhase = "checking" | "ready" | "success" | "invalid";
 
-function ResetPasswordInner() {
+const RECOVERY_WAIT_MS = 4000;
+const RECOVERY_POLL_MS = 100;
+
+/**
+ * Password recovery page for Supabase PKCE.
+ *
+ * `createBrowserClient` performs exactly one PKCE exchange via
+ * `detectSessionInUrl`. This page must not call `exchangeCodeForSession` or
+ * read `?code` — it only waits for PASSWORD_RECOVERY / a recovery session.
+ */
+export function ResetPasswordClient() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const updatePassword = useAuthStore((state) => state.updatePassword);
   const setPasswordRecoveryPending = useAuthStore(
     (state) => state.setPasswordRecoveryPending,
@@ -36,65 +46,85 @@ function ResetPasswordInner() {
 
   useEffect(() => {
     let cancelled = false;
+    let settled = false;
 
-    setPasswordRecoveryPending(true);
+    function markReady() {
+      if (cancelled || settled) return;
+      settled = true;
+      setPasswordRecoveryPending(true);
+      setPhase("ready");
+    }
 
-    const unsubscribe = isSupabaseConfigured()
-      ? cloudAuth.onAuthStateChange((_profile, event) => {
-          if (event === "PASSWORD_RECOVERY") {
-            setPasswordRecoveryPending(true);
-            if (!cancelled) setPhase("ready");
-          }
-        })
-      : () => undefined;
+    function markInvalid() {
+      if (cancelled || settled) return;
+      settled = true;
+      setPasswordRecoveryPending(false);
+      setPhase("invalid");
+    }
 
-    async function establishRecoverySession() {
-      if (!isSupabaseConfigured()) {
-        if (!cancelled) setPhase("invalid");
+    if (!isSupabaseConfigured()) {
+      markInvalid();
+      return;
+    }
+
+    const supabase = getSupabaseBrowserClient();
+
+    // Subscribe before awaiting getSession so we do not miss PASSWORD_RECOVERY
+    // when detectSessionInUrl finishes during initialize.
+    const unsubscribe = cloudAuth.onAuthStateChange((_profile, event) => {
+      if (event === "PASSWORD_RECOVERY") {
+        markReady();
+      }
+    });
+
+    async function waitForRecoverySession() {
+      // Resolves only after client initialize — including detectSessionInUrl.
+      const { data, error } = await supabase.auth.getSession();
+      if (cancelled || settled) return;
+
+      if (error) {
+        markInvalid();
         return;
       }
 
-      try {
-        const code = searchParams.get("code");
-        if (code) {
-          await cloudAuth.exchangeCodeForSession(code);
-          setPasswordRecoveryPending(true);
-          if (!cancelled) {
-            setPhase("ready");
-            // Drop the one-time code from the URL after exchange.
-            router.replace(PASSWORD_RESET_PATH);
-          }
+      // Recovery redirect has already been exchanged into a session.
+      if (data.session) {
+        markReady();
+        return;
+      }
+
+      // Bootstrap may still deliver PASSWORD_RECOVERY just after initialize.
+      if (useAuthStore.getState().passwordRecoveryPending) {
+        markReady();
+        return;
+      }
+
+      const startedAt = Date.now();
+      while (!cancelled && !settled && Date.now() - startedAt < RECOVERY_WAIT_MS) {
+        if (useAuthStore.getState().passwordRecoveryPending) {
+          markReady();
           return;
         }
-
-        // Callback route should already have exchanged; wait briefly for session.
-        for (let attempt = 0; attempt < 16; attempt += 1) {
-          const session = await cloudAuth.getSession();
-          if (session) {
-            if (!cancelled) setPhase("ready");
-            return;
-          }
-          await new Promise((resolve) => window.setTimeout(resolve, 200));
+        const session = await cloudAuth.getSession();
+        if (session) {
+          markReady();
+          return;
         }
-
-        if (!cancelled) setPhase("invalid");
-      } catch (error) {
-        if (!cancelled) {
-          setPhase("invalid");
-          if (error instanceof AuthError) {
-            setLocalError(error.message);
-          }
-        }
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, RECOVERY_POLL_MS),
+        );
       }
+
+      markInvalid();
     }
 
-    void establishRecoverySession();
+    void waitForRecoverySession();
 
     return () => {
       cancelled = true;
       unsubscribe();
     };
-  }, [searchParams, setPasswordRecoveryPending, router]);
+  }, [setPasswordRecoveryPending]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -159,8 +189,7 @@ function ResetPasswordInner() {
                 Link unavailable
               </p>
               <p className="mt-3 text-sm leading-relaxed text-netflix-muted">
-                {displayError ??
-                  "This reset link is invalid, expired, or has already been used. Request a new one from the sign-in screen."}
+                Reset link invalid or expired.
               </p>
             </div>
             <Button
@@ -236,20 +265,6 @@ function ResetPasswordInner() {
   );
 }
 
-export function ResetPasswordClient() {
-  return (
-    <Suspense
-      fallback={
-        <div className="flex min-h-screen items-center justify-center bg-netflix-black text-netflix-muted">
-          <p className="text-sm tracking-wide">Verifying your reset link…</p>
-        </div>
-      }
-    >
-      <ResetPasswordInner />
-    </Suspense>
-  );
-}
-
 function friendlyResetUpdateError(message: string | null): string | null {
   if (!message) return null;
   const lower = message.toLowerCase();
@@ -258,7 +273,7 @@ function friendlyResetUpdateError(message: string | null): string | null {
     lower.includes("invalid") ||
     lower.includes("already")
   ) {
-    return "This reset link is invalid or has expired. Request a new one.";
+    return "Reset link invalid or expired.";
   }
   if (lower.includes("match") || lower.includes("different")) {
     return message;
