@@ -5,6 +5,7 @@ import type {
 } from "@/lib/repositories/cloud/types";
 import { logger } from "@/lib/observability/logger";
 import type { Collection, CollectionItem, Movie, MovieVote } from "@/lib/types";
+import { getLocalCollectionsPersistName } from "@/store/local-collection-store";
 
 const LOCAL_MIGRATION_FLAG = "pickit-cloud-migration-v1";
 
@@ -98,9 +99,11 @@ export async function migrateLocalDataToSupabase(userId: string): Promise<{
     crewId = null;
   }
 
-  const legacyCollections = safeParse<LegacyCollections>(
-    window.localStorage.getItem("decision-local-collections"),
-  );
+  const persistedCollections = safeParse<
+    { state?: LegacyCollections } & LegacyCollections
+  >(window.localStorage.getItem(getLocalCollectionsPersistName(userId)));
+  const legacyCollections =
+    persistedCollections?.state ?? persistedCollections ?? null;
   const legacyVotes = safeParse<LegacyVotes>(
     window.localStorage.getItem("decision-votes"),
   );

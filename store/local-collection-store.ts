@@ -47,6 +47,8 @@ type LocalCollectionStore = {
   collectionOverrides: Record<string, CollectionOverride>;
   /** Capture inbox history (newest first). */
   captures: CaptureEvent[];
+  /** Active persistence scope (authenticated user id, or null when signed out). */
+  scopedUserId: string | null;
   addMovie: (
     collectionId: string,
     movie: Movie,
@@ -72,6 +74,26 @@ type LocalCollectionStore = {
     collectionId: string,
     movieId: string,
   ) => CollectionMovie | undefined;
+};
+
+/** Persist namespace prefix — never share one global bucket across accounts. */
+export const LOCAL_COLLECTIONS_PERSIST_PREFIX =
+  "decision-local-collections";
+
+export function getLocalCollectionsPersistName(
+  userId: string | null | undefined,
+): string {
+  if (userId && userId.trim()) {
+    return `${LOCAL_COLLECTIONS_PERSIST_PREFIX}:${userId.trim()}`;
+  }
+  return `${LOCAL_COLLECTIONS_PERSIST_PREFIX}:signed-out`;
+}
+
+const EMPTY_MEMORY_STATE = {
+  byCollection: {} as Record<string, CollectionMovie[]>,
+  createdCollections: EMPTY_CREATED_COLLECTIONS,
+  collectionOverrides: EMPTY_COLLECTION_OVERRIDES,
+  captures: EMPTY_CAPTURES,
 };
 
 function newId(prefix: string): string {
@@ -106,6 +128,7 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
       createdCollections: EMPTY_CREATED_COLLECTIONS,
       collectionOverrides: EMPTY_COLLECTION_OVERRIDES,
       captures: EMPTY_CAPTURES,
+      scopedUserId: null,
 
       addMovie: (
         collectionId,
@@ -586,8 +609,10 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
       },
     }),
     {
-      name: "decision-local-collections",
+      name: getLocalCollectionsPersistName(null),
       version: 2,
+      // Auth bootstrap hydrates the correct user-scoped bucket explicitly.
+      skipHydration: true,
       partialize: (state) => ({
         byCollection: state.byCollection,
         createdCollections: state.createdCollections,
@@ -641,11 +666,49 @@ export const useLocalCollectionStore = create<LocalCollectionStore>()(
           collectionOverrides:
             data.collectionOverrides ?? current.collectionOverrides,
           captures: data.captures ?? current.captures,
+          // Scope is controlled by switchLocalCollectionScope, not storage.
+          scopedUserId: current.scopedUserId,
         };
       },
     },
   ),
 );
+
+/** Clear in-memory collection state without touching another user's storage. */
+export function clearLocalCollectionMemory(): void {
+  useLocalCollectionStore.setState({
+    ...EMPTY_MEMORY_STATE,
+  });
+}
+
+/**
+ * Persist + hydrate collection state for a single authenticated user.
+ * Call on login, signup, session restore, and logout (userId = null).
+ */
+export async function switchLocalCollectionScope(
+  userId: string | null,
+): Promise<void> {
+  const nextName = getLocalCollectionsPersistName(userId);
+  const currentName =
+    useLocalCollectionStore.persist.getOptions().name ??
+    getLocalCollectionsPersistName(null);
+
+  if (
+    currentName === nextName &&
+    useLocalCollectionStore.getState().scopedUserId === userId &&
+    useLocalCollectionStore.persist.hasHydrated()
+  ) {
+    return;
+  }
+
+  // Point persistence at the target user before mutating memory so we never
+  // write empty state over the previous user's bucket.
+  useLocalCollectionStore.persist.setOptions({ name: nextName });
+  clearLocalCollectionMemory();
+  useLocalCollectionStore.setState({ scopedUserId: userId });
+  await useLocalCollectionStore.persist.rehydrate();
+  useLocalCollectionStore.setState({ scopedUserId: userId });
+}
 
 /** Merge server seed items with locally added movies (local wins on id clash). */
 export function mergeCollectionItems(
