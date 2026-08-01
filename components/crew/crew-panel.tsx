@@ -3,11 +3,13 @@
 import { Check, Copy, Link2, Pencil, Users, UserMinus, X } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { CrewMemberAvatar } from "@/components/crew/crew-member-avatar";
 import { CrewMemberPresence } from "@/components/crew/crew-presence";
 import { CrewStreamingPreferencesPanel } from "@/components/crew/crew-streaming-preferences";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Surface } from "@/components/ui/surface";
+import { resolveCrewMemberLabel } from "@/lib/crew/member-identity";
 import { getCrewRoleLabel } from "@/lib/crew/permissions";
 import { analytics } from "@/lib/observability/analytics";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
@@ -252,21 +254,14 @@ export function CrewPanel() {
 
         <div className="flex flex-wrap gap-2">
           {members.map((member) => {
-            const name = member.profile?.displayName ?? "Member";
+            const name = resolveCrewMemberLabel(member.profile);
             return (
               <div
                 key={member.id}
                 className="flex min-w-[10rem] flex-col gap-1 rounded-xl bg-white/[0.04] px-3 py-2"
               >
                 <div className="flex items-center gap-2">
-                  <span
-                    className="flex size-7 items-center justify-center rounded-full text-xs font-semibold text-white"
-                    style={{
-                      backgroundColor: member.profile?.color ?? "#e50914",
-                    }}
-                  >
-                    {name.slice(0, 1).toUpperCase()}
-                  </span>
+                  <CrewMemberAvatar profile={member.profile} />
                   <div>
                     <p className="text-sm text-white">
                       {name}

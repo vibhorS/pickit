@@ -3,7 +3,9 @@
 import { Check, Copy, Users } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { CrewMemberAvatar } from "@/components/crew/crew-member-avatar";
 import { getCollectionSharingState } from "@/lib/collaboration";
+import { resolveCrewMemberLabel } from "@/lib/crew/member-identity";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { useCollaborationStore } from "@/store/collaboration-store";
 import { useCrewStore } from "@/store/crew-store";
@@ -85,7 +87,7 @@ export function CollectionCollaborationPanel({
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               {crewMembers.map((member) => {
-                const name = member.profile?.displayName ?? "Member";
+                const name = resolveCrewMemberLabel(member.profile);
                 const active = member.userId === activeUserId;
                 return (
                   <span
@@ -96,16 +98,10 @@ export function CollectionCollaborationPanel({
                         : "bg-white/[0.04] text-netflix-muted"
                     }`}
                   >
-                    <span
-                      aria-hidden="true"
-                      className="flex size-6 items-center justify-center rounded-full text-[0.65rem] font-semibold text-white"
-                      style={{
-                        backgroundColor:
-                          member.profile?.color ?? "rgba(229,9,20,0.35)",
-                      }}
-                    >
-                      {name.slice(0, 1).toUpperCase()}
-                    </span>
+                    <CrewMemberAvatar
+                      profile={member.profile}
+                      sizeClassName="size-6"
+                    />
                     {name}
                     {member.role === "owner" && (
                       <span className="text-[0.625rem] uppercase tracking-wide text-netflix-muted/60">

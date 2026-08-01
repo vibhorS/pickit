@@ -4,6 +4,7 @@ import {
   formatRatingStateLabel,
   getRatingDisplayState,
 } from "@/lib/collaboration";
+import { resolveCrewMemberLabel } from "@/lib/crew/member-identity";
 import type { MovieVote } from "@/lib/types";
 import { useAuthStore } from "@/store/auth-store";
 import { useCrewStore } from "@/store/crew-store";
@@ -35,7 +36,7 @@ export function CollaborativeRatingStatus({
     ? otherMember?.userId
     : partner.partner?.id;
   const otherName = isSupabaseConfigured()
-    ? (otherMember?.profile?.displayName ?? "Crew member")
+    ? resolveCrewMemberLabel(otherMember?.profile)
     : (partner.partner?.displayName ?? "Partner");
 
   const state = getRatingDisplayState({

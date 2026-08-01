@@ -22,7 +22,7 @@ import type {
   UserProfile,
 } from "@/lib/types";
 import { useCollaborationStore } from "@/store/collaboration-store";
-import { switchLocalCollectionScope } from "@/store/local-collection-store";
+import { switchAuthenticatedLocalScope } from "@/store/switch-authenticated-local-scope";
 
 type AuthStore = {
   hydrated: boolean;
@@ -138,7 +138,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
               partner: EMPTY_PARTNER,
               passwordRecoveryPending: false,
             });
-            void switchLocalCollectionScope(null);
+            void switchAuthenticatedLocalScope(null);
             return;
           }
           if (nextProfile && !get().passwordRecoveryPending) {
@@ -357,7 +357,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     presenceService.stop();
     if (useCloud()) await cloudAuth.logout();
     else await authenticationService.logout();
-    await switchLocalCollectionScope(null);
+    await switchAuthenticatedLocalScope(null);
     set({
       profile: null,
       session: null,
@@ -372,7 +372,7 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
     presenceService.stop();
     if (useCloud()) await cloudAuth.deleteAccount(current.id);
     else await authenticationService.deleteAccount(current.id);
-    await switchLocalCollectionScope(null);
+    await switchAuthenticatedLocalScope(null);
     set({
       profile: null,
       session: null,

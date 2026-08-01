@@ -39,6 +39,8 @@ type CaptureInboxStore = {
   activeId: string | null;
   searchQuery: string;
   statusFilter: CaptureProcessingStatus | "all" | "inbox";
+  /** Active persistence scope (authenticated user id, or null when signed out). */
+  scopedUserId: string | null;
   setSearchQuery: (query: string) => void;
   setStatusFilter: (filter: CaptureInboxStore["statusFilter"]) => void;
   setActiveId: (id: string | null) => void;
@@ -62,13 +64,30 @@ type CaptureInboxStore = {
   getItem: (id: string) => CaptureItem | undefined;
 };
 
+/** Persist namespace prefix — never share one global bucket across accounts. */
+export const CAPTURE_INBOX_PERSIST_PREFIX = "pickit-capture-inbox";
+
+export function getCaptureInboxPersistName(
+  userId: string | null | undefined,
+): string {
+  if (userId && userId.trim()) {
+    return `${CAPTURE_INBOX_PERSIST_PREFIX}:${userId.trim()}`;
+  }
+  return `${CAPTURE_INBOX_PERSIST_PREFIX}:signed-out`;
+}
+
+const EMPTY_INBOX_MEMORY = {
+  items: [] as CaptureItem[],
+  activeId: null as string | null,
+  searchQuery: "",
+  statusFilter: "inbox" as CaptureInboxStore["statusFilter"],
+};
+
 export const useCaptureInboxStore = create<CaptureInboxStore>()(
   persist(
     (set, get) => ({
-      items: [],
-      activeId: null,
-      searchQuery: "",
-      statusFilter: "inbox",
+      ...EMPTY_INBOX_MEMORY,
+      scopedUserId: null,
 
       setSearchQuery: (query) => set({ searchQuery: query }),
       setStatusFilter: (statusFilter) => set({ statusFilter }),
@@ -164,14 +183,14 @@ export const useCaptureInboxStore = create<CaptureInboxStore>()(
         }));
       },
 
-      archiveItem: (id) =>
-        get().updateItem(id, { status: "archived" }),
+      archiveItem: (id) => get().updateItem(id, { status: "archived" }),
 
       getItem: (id) => get().items.find((item) => item.id === id),
     }),
     {
-      name: "pickit-capture-inbox",
-      version: 1,
+      name: getCaptureInboxPersistName(null),
+      version: 2,
+      skipHydration: true,
       partialize: (state) => ({
         items: state.items.map(
           (item): PersistedCaptureItem => ({
@@ -201,7 +220,8 @@ export const useCaptureInboxStore = create<CaptureInboxStore>()(
                     : "not-found"),
               decisionReason: match.decisionReason ?? "Legacy migration",
               dominanceGap: match.dominanceGap ?? 0,
-              candidateCount: match.candidateCount ?? match.alternatives?.length ?? 0,
+              candidateCount:
+                match.candidateCount ?? match.alternatives?.length ?? 0,
               candidateDiagnostics: match.candidateDiagnostics ?? [],
             })),
             suggestedCollectionNames: item.suggestedCollectionNames ?? [],
@@ -209,11 +229,46 @@ export const useCaptureInboxStore = create<CaptureInboxStore>()(
             createCollectionNames: item.createCollectionNames ?? [],
             importedMovieIds: item.importedMovieIds ?? [],
           })),
+          // Scope is controlled by switchCaptureInboxScope, not storage.
+          scopedUserId: current.scopedUserId,
         };
       },
     },
   ),
 );
+
+export function clearCaptureInboxMemory(): void {
+  useCaptureInboxStore.setState({
+    ...EMPTY_INBOX_MEMORY,
+  });
+}
+
+/**
+ * Persist + hydrate capture inbox for a single authenticated user.
+ * Call on login, signup, session restore, and logout (userId = null).
+ */
+export async function switchCaptureInboxScope(
+  userId: string | null,
+): Promise<void> {
+  const nextName = getCaptureInboxPersistName(userId);
+  const currentName =
+    useCaptureInboxStore.persist.getOptions().name ??
+    getCaptureInboxPersistName(null);
+
+  if (
+    currentName === nextName &&
+    useCaptureInboxStore.getState().scopedUserId === userId &&
+    useCaptureInboxStore.persist.hasHydrated()
+  ) {
+    return;
+  }
+
+  useCaptureInboxStore.persist.setOptions({ name: nextName });
+  clearCaptureInboxMemory();
+  useCaptureInboxStore.setState({ scopedUserId: userId });
+  await useCaptureInboxStore.persist.rehydrate();
+  useCaptureInboxStore.setState({ scopedUserId: userId });
+}
 
 export function filterInboxItems(
   items: CaptureItem[],

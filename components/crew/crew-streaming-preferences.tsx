@@ -1,9 +1,7 @@
 "use client";
 
-import {
-  providerLogoUrl,
-  uniqueCatalogForPreferences,
-} from "@/lib/streaming/provider-catalog";
+import { ProviderLogo } from "@/components/streaming/provider-logo";
+import { uniqueCatalogForPreferences } from "@/lib/streaming/provider-catalog";
 import {
   EMPTY_CREW_STREAMING_PREFERENCES,
   useCrewPreferencesStore,
@@ -55,7 +53,6 @@ export function CrewStreamingPreferencesPanel({
       <ul className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
         {catalog.map((provider) => {
           const isSelected = selected.has(provider.id);
-          const logo = providerLogoUrl(provider.logoPath, provider.id);
           const inputId = `crew-stream-${crewId}-${provider.id}`;
           return (
             <li key={provider.id}>
@@ -74,23 +71,11 @@ export function CrewStreamingPreferencesPanel({
                   onChange={() => toggle(provider.id)}
                   className="size-4 shrink-0 rounded border-white/30 bg-transparent text-netflix-red focus:ring-netflix-red/40"
                 />
-                {logo ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- TMDB CDN logos
-                  <img
-                    src={logo}
-                    alt=""
-                    width={28}
-                    height={28}
-                    className="size-7 rounded-md bg-white/90 object-contain p-0.5"
-                  />
-                ) : (
-                  <span
-                    aria-hidden="true"
-                    className="grid size-7 place-items-center rounded-md bg-white/10 text-[0.625rem] font-semibold text-white"
-                  >
-                    {provider.shortName.slice(0, 1)}
-                  </span>
-                )}
+                <ProviderLogo
+                  providerId={provider.id}
+                  name={provider.shortName}
+                  logoPath={provider.logoPath}
+                />
                 <span className="text-sm text-white">{provider.shortName}</span>
               </label>
             </li>

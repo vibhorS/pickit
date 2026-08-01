@@ -2,9 +2,9 @@
 
 import {
   displayProviderName,
-  providerLogoUrl,
 } from "@/lib/streaming/provider-catalog";
 import type { WatchAvailability, WatchProvider } from "@/lib/streaming/types";
+import { ProviderLogo } from "@/components/streaming/provider-logo";
 
 type ProviderChipsProps = {
   availability: WatchAvailability | null | undefined;
@@ -14,37 +14,6 @@ type ProviderChipsProps = {
   showUnavailable?: boolean;
   className?: string;
 };
-
-function ProviderLogo({
-  provider,
-}: {
-  provider: Pick<WatchProvider, "providerId" | "name" | "logoPath">;
-}) {
-  const src = providerLogoUrl(provider.logoPath, provider.providerId);
-  const label = displayProviderName(provider.providerId, provider.name);
-
-  if (!src) {
-    return (
-      <span className="inline-flex max-w-full truncate rounded-md bg-white/[0.06] px-1.5 py-0.5 text-[0.625rem] font-medium text-netflix-muted/85">
-        {label}
-      </span>
-    );
-  }
-
-  return (
-    // eslint-disable-next-line @next/next/no-img-element -- TMDB CDN logos; sizes vary by provider
-    <img
-      src={src}
-      alt={label}
-      title={label}
-      width={28}
-      height={28}
-      loading="lazy"
-      decoding="async"
-      className="size-7 rounded-md bg-white/90 object-contain p-0.5 shadow-sm"
-    />
-  );
-}
 
 export function ProviderChips({
   availability,
@@ -81,9 +50,13 @@ export function ProviderChips({
         Available on
       </p>
       <ul className="flex flex-wrap items-center gap-1.5" aria-label="Available on">
-        {providers.map((provider) => (
+        {providers.map((provider: WatchProvider) => (
           <li key={provider.providerId}>
-            <ProviderLogo provider={provider} />
+            <ProviderLogo
+              providerId={provider.providerId}
+              name={displayProviderName(provider.providerId, provider.name)}
+              logoPath={provider.logoPath}
+            />
           </li>
         ))}
       </ul>

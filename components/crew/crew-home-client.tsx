@@ -10,6 +10,7 @@ import { useCollectionStats } from "@/store/collection-stats-selector";
 import { useCrewStore } from "@/store/crew-store";
 import { useLocalCollectionStore } from "@/store/local-collection-store";
 import { useVoteStore } from "@/store/vote-store";
+import { resolveCrewMemberLabel } from "@/lib/crew/member-identity";
 
 function activityLabel(type: string, summary?: string | null): string {
   if (summary) return summary;
@@ -46,7 +47,7 @@ export function CrewHomeClient() {
 
   const memberName = useMemo(() => {
     const map = new Map(
-      members.map((m) => [m.userId, m.profile?.displayName ?? "Member"]),
+      members.map((m) => [m.userId, resolveCrewMemberLabel(m.profile)]),
     );
     return (userId: string) => map.get(userId) ?? "Someone";
   }, [members]);
