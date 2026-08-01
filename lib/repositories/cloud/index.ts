@@ -438,9 +438,22 @@ function createAuthRepository(): AuthRepository {
     async resetPasswordForEmail(email) {
       const supabase = getSupabaseBrowserClient();
       const normalizedEmail = email.trim().toLowerCase();
+      let redirectTo: string;
+      try {
+        redirectTo = getPasswordResetRedirectUrl();
+      } catch {
+        throw new AuthError(
+          "UNKNOWN",
+          "Could not determine the app URL for password reset. Try again from the browser.",
+        );
+      }
+      logger.info("Password reset redirect configured", {
+        origin: new URL(redirectTo).origin,
+        path: new URL(redirectTo).pathname,
+      });
       const { error } = await supabase.auth.resetPasswordForEmail(
         normalizedEmail,
-        { redirectTo: getPasswordResetRedirectUrl() },
+        { redirectTo },
       );
       if (!error) return;
 
@@ -523,6 +536,40 @@ function createAuthRepository(): AuthRepository {
       throw new AuthError(
         "UNKNOWN",
         "We couldn't update your password. Please try again.",
+      );
+    },
+
+    async exchangeCodeForSession(code) {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.auth.exchangeCodeForSession(code);
+      if (!error) return;
+
+      const message = error.message.toLowerCase();
+      if (
+        message.includes("expired") ||
+        message.includes("invalid") ||
+        message.includes("code verifier") ||
+        message.includes("already") ||
+        message.includes("flow state")
+      ) {
+        throw new AuthError(
+          "SESSION_EXPIRED",
+          "This reset link is invalid or has expired. Request a new one.",
+        );
+      }
+      if (
+        message.includes("network") ||
+        message.includes("fetch") ||
+        message.includes("failed to fetch")
+      ) {
+        throw new AuthError(
+          "NETWORK",
+          "We couldn't reach the server. Check your connection and try again.",
+        );
+      }
+      throw new AuthError(
+        "UNKNOWN",
+        "We couldn't verify your reset link. Please try again.",
       );
     },
 

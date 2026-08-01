@@ -96,6 +96,11 @@ export const cloudAuth = {
     await getCloudRepositories().auth.updatePassword(password);
   },
 
+  async exchangeCodeForSession(code: string) {
+    assertCloud();
+    await getCloudRepositories().auth.exchangeCodeForSession(code);
+  },
+
   async updateProfile(
     userId: string,
     patch: Partial<

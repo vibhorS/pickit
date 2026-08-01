@@ -1,28 +1,28 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { PasswordField } from "@/components/auth/password-field";
 import { Button } from "@/components/ui/button";
+import { AuthError } from "@/lib/auth/auth-service";
+import { cloudAuth } from "@/lib/auth/cloud-auth";
 import {
   MIN_PASSWORD_LENGTH,
+  PASSWORD_RESET_PATH,
   validateNewPassword,
 } from "@/lib/auth/password-reset";
-import { cloudAuth } from "@/lib/auth/cloud-auth";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { analytics } from "@/lib/observability/analytics";
 import { useAuthStore } from "@/store/auth-store";
 
 type ResetPhase = "checking" | "ready" | "success" | "invalid";
 
-export function ResetPasswordClient() {
+function ResetPasswordInner() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const updatePassword = useAuthStore((state) => state.updatePassword);
   const setPasswordRecoveryPending = useAuthStore(
     (state) => state.setPasswordRecoveryPending,
-  );
-  const passwordRecoveryPending = useAuthStore(
-    (state) => state.passwordRecoveryPending,
   );
   const clearError = useAuthStore((state) => state.clearError);
   const storeError = useAuthStore((state) => state.error);
@@ -36,7 +36,6 @@ export function ResetPasswordClient() {
 
   useEffect(() => {
     let cancelled = false;
-    let attempts = 0;
 
     setPasswordRecoveryPending(true);
 
@@ -49,34 +48,53 @@ export function ResetPasswordClient() {
         })
       : () => undefined;
 
-    async function detectRecoverySession() {
+    async function establishRecoverySession() {
       if (!isSupabaseConfigured()) {
         if (!cancelled) setPhase("invalid");
         return;
       }
 
-      while (!cancelled && attempts < 12) {
-        attempts += 1;
-        const session = await cloudAuth.getSession();
-        if (session || passwordRecoveryPending) {
-          if (!cancelled) setPhase("ready");
+      try {
+        const code = searchParams.get("code");
+        if (code) {
+          await cloudAuth.exchangeCodeForSession(code);
+          setPasswordRecoveryPending(true);
+          if (!cancelled) {
+            setPhase("ready");
+            // Drop the one-time code from the URL after exchange.
+            router.replace(PASSWORD_RESET_PATH);
+          }
           return;
         }
-        await new Promise((resolve) => window.setTimeout(resolve, 250));
-      }
 
-      if (!cancelled) setPhase("invalid");
+        // Callback route should already have exchanged; wait briefly for session.
+        for (let attempt = 0; attempt < 16; attempt += 1) {
+          const session = await cloudAuth.getSession();
+          if (session) {
+            if (!cancelled) setPhase("ready");
+            return;
+          }
+          await new Promise((resolve) => window.setTimeout(resolve, 200));
+        }
+
+        if (!cancelled) setPhase("invalid");
+      } catch (error) {
+        if (!cancelled) {
+          setPhase("invalid");
+          if (error instanceof AuthError) {
+            setLocalError(error.message);
+          }
+        }
+      }
     }
 
-    void detectRecoverySession();
+    void establishRecoverySession();
 
     return () => {
       cancelled = true;
       unsubscribe();
     };
-    // passwordRecoveryPending intentionally omitted from deps to avoid re-loop
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setPasswordRecoveryPending]);
+  }, [searchParams, setPasswordRecoveryPending, router]);
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -141,8 +159,8 @@ export function ResetPasswordClient() {
                 Link unavailable
               </p>
               <p className="mt-3 text-sm leading-relaxed text-netflix-muted">
-                This reset link is invalid, expired, or has already been used.
-                Request a new one from the sign-in screen.
+                {displayError ??
+                  "This reset link is invalid, expired, or has already been used. Request a new one from the sign-in screen."}
               </p>
             </div>
             <Button
@@ -215,6 +233,20 @@ export function ResetPasswordClient() {
         )}
       </div>
     </div>
+  );
+}
+
+export function ResetPasswordClient() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-netflix-black text-netflix-muted">
+          <p className="text-sm tracking-wide">Verifying your reset link…</p>
+        </div>
+      }
+    >
+      <ResetPasswordInner />
+    </Suspense>
   );
 }
 

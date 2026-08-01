@@ -72,6 +72,7 @@ export type AuthRepository = {
   signInWithApple(): Promise<void>;
   resetPasswordForEmail(email: string): Promise<void>;
   updatePassword(password: string): Promise<void>;
+  exchangeCodeForSession(code: string): Promise<void>;
   updateProfile(
     userId: string,
     patch: Partial<

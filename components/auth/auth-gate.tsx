@@ -1,7 +1,7 @@
 "use client";
 
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form";
 import { PasswordField } from "@/components/auth/password-field";
 import { Button } from "@/components/ui/button";
@@ -33,9 +33,10 @@ function friendlyAuthMessage(message: string | null): string | null {
   return "We couldn't complete that sign-in step. Please try again.";
 }
 
-export function AuthGate({ children }: { children: React.ReactNode }) {
+function AuthGateInner({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const profile = useAuthStore((state) => state.profile);
   const error = useAuthStore((state) => state.error);
   const signIn = useAuthStore((state) => state.signIn);
@@ -59,7 +60,8 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
 
   const isInviteRoute = pathname.startsWith("/invite/");
   const isResetPasswordRoute = pathname.startsWith(PASSWORD_RESET_PATH);
-  const isPublicRoute = isInviteRoute || isResetPasswordRoute;
+  const isAuthRoute = pathname.startsWith("/auth/");
+  const isPublicRoute = isInviteRoute || isAuthRoute;
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -88,6 +90,16 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     analytics.screen("landing_auth", { route: pathname });
     analytics.track("landing_viewed", { route: pathname });
   }, [pathname]);
+
+  // Safety net when Site URL fallback lands on /?code=...
+  useEffect(() => {
+    if (isAuthRoute) return;
+    const code = searchParams.get("code");
+    if (!code) return;
+    const params = new URLSearchParams();
+    params.set("code", code);
+    router.replace(`${PASSWORD_RESET_PATH}?${params.toString()}`);
+  }, [isAuthRoute, router, searchParams]);
 
   useEffect(() => {
     if (passwordRecoveryPending && !isResetPasswordRoute) {
@@ -129,7 +141,6 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         reason:
           err instanceof Error ? err.message.slice(0, 180) : "unknown-auth-error",
       });
-      // error stored in auth store
     } finally {
       setBusy(false);
     }
@@ -316,5 +327,13 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
         )}
       </div>
     </div>
+  );
+}
+
+export function AuthGate({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={<>{children}</>}>
+      <AuthGateInner>{children}</AuthGateInner>
+    </Suspense>
   );
 }

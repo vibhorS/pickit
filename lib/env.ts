@@ -14,6 +14,7 @@ export type EnvConfig = {
   appEnv: AppEnv;
   supabaseUrl: string | null;
   supabaseAnonKey: string | null;
+  siteUrl: string | null;
   tmdbApiKey: string | null;
   openaiApiKey: string | null;
   aiProvider: string;
@@ -34,6 +35,9 @@ export function getEnvConfig(): EnvConfig {
   // Static property access — required for Next.js client inlining.
   const supabaseUrl = trimOrNull(process.env.NEXT_PUBLIC_SUPABASE_URL);
   const supabaseAnonKey = trimOrNull(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  const siteUrl =
+    trimOrNull(process.env.NEXT_PUBLIC_SITE_URL) ??
+    trimOrNull(process.env.NEXT_PUBLIC_APP_URL);
   const tmdbApiKey = trimOrNull(process.env.TMDB_API_KEY);
   // Server-only — never NEXT_PUBLIC_
   const openaiApiKey = trimOrNull(process.env.OPENAI_API_KEY);
@@ -45,6 +49,7 @@ export function getEnvConfig(): EnvConfig {
     appEnv,
     supabaseUrl,
     supabaseAnonKey,
+    siteUrl,
     tmdbApiKey,
     openaiApiKey,
     aiProvider,
