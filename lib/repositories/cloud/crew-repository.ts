@@ -72,6 +72,8 @@ export type CrewRepository = {
   listMemberProfiles(crewId: string): Promise<UserProfile[]>;
   addMember(crewId: string, userId: string, role: CrewRole): Promise<CrewMember>;
   removeMember(crewId: string, userId: string): Promise<void>;
+  /** Owner-only soft-remove via security-definer RPC. */
+  removeMemberByOwner(crewId: string, targetUserId: string): Promise<void>;
   createInvitation(crewId: string, invitedByUserId: string): Promise<CrewInvitation>;
   getInvitationByToken(token: string): Promise<CrewInvitation | null>;
   updateInvitation(invite: CrewInvitation): Promise<CrewInvitation>;
@@ -266,6 +268,26 @@ export function createCrewRepository(): CrewRepository {
         .eq("crew_id", crewId)
         .eq("user_id", userId);
       if (error) throw new Error(error.message);
+    },
+
+    async removeMemberByOwner(crewId, targetUserId) {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase.rpc("remove_crew_member", {
+        p_crew_id: crewId,
+        p_target_user_id: targetUserId,
+      });
+      if (!error) return;
+
+      const message = error.message.toLowerCase();
+      const missingFn =
+        message.includes("could not find the function") ||
+        message.includes("schema cache") ||
+        error.code === "PGRST202";
+      if (!missingFn) throw new Error(error.message);
+
+      // Fallback until 20260806_remove_crew_member.sql is applied.
+      // Caller must already verify the actor is the crew owner.
+      await this.removeMember(crewId, targetUserId);
     },
 
     async createInvitation(crewId, invitedByUserId) {

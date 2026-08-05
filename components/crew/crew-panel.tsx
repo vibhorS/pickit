@@ -1,8 +1,8 @@
 "use client";
 
-import { Check, Copy, Link2, Pencil, Users, UserMinus, X } from "lucide-react";
+import { Check, Copy, Link2, MoreVertical, Pencil, Users, UserMinus, X } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { CrewMemberAvatar } from "@/components/crew/crew-member-avatar";
 import { CrewMemberPresence } from "@/components/crew/crew-presence";
 import { CrewStreamingPreferencesPanel } from "@/components/crew/crew-streaming-preferences";
@@ -11,11 +11,15 @@ import { Input } from "@/components/ui/input";
 import { Surface } from "@/components/ui/surface";
 import { resolveCrewMemberLabel } from "@/lib/crew/member-identity";
 import { getCrewRoleLabel } from "@/lib/crew/permissions";
+import type { CrewMember } from "@/lib/crew/types";
+import type { UserProfile } from "@/lib/types";
 import { analytics } from "@/lib/observability/analytics";
 import { isSupabaseConfigured } from "@/lib/supabase/client";
 import { crewService } from "@/lib/services/crew/crew-service";
 import { useAuthStore } from "@/store/auth-store";
 import { useCrewStore } from "@/store/crew-store";
+
+type MemberWithProfile = CrewMember & { profile: UserProfile | null };
 
 export function CrewPanel() {
   const profile = useAuthStore((state) => state.profile);
@@ -29,6 +33,10 @@ export function CrewPanel() {
   const [error, setError] = useState<string | null>(null);
   const [editingName, setEditingName] = useState(false);
   const [crewNameDraft, setCrewNameDraft] = useState<string | null>(null);
+  const [menuMemberId, setMenuMemberId] = useState<string | null>(null);
+  const [pendingRemoval, setPendingRemoval] = useState<MemberWithProfile | null>(
+    null,
+  );
   const token = createdToken ?? pendingInvite?.token ?? null;
   const nameDraft = crewNameDraft ?? crew?.name ?? "";
 
@@ -171,9 +179,31 @@ export function CrewPanel() {
     }
   }
 
+  async function confirmRemoveMember() {
+    if (!profile || !pendingRemoval) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const snapshot = await crewService.removeCrewMember(
+        profile.id,
+        pendingRemoval.userId,
+      );
+      setSnapshot(snapshot);
+      setPendingRemoval(null);
+      setMenuMemberId(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not remove member.",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const others = members.filter((m) => m.userId !== profile?.id);
   const myRole = members.find((m) => m.userId === profile?.id)?.role;
   const canRename = myRole === "owner";
+  const canRemoveMembers = myRole === "owner";
 
   return (
     <section className="mt-10">
@@ -255,24 +285,39 @@ export function CrewPanel() {
         <div className="flex flex-wrap gap-2">
           {members.map((member) => {
             const name = resolveCrewMemberLabel(member.profile);
+            const isSelf = member.userId === profile?.id;
+            const showOwnerMenu = canRemoveMembers && !isSelf;
             return (
               <div
                 key={member.id}
-                className="flex min-w-[10rem] flex-col gap-1 rounded-xl bg-white/[0.04] px-3 py-2"
+                className="relative flex min-w-[10rem] flex-col gap-1 rounded-xl bg-white/[0.04] px-3 py-2"
               >
-                <div className="flex items-center gap-2">
+                <div className="flex items-start gap-2">
                   <CrewMemberAvatar profile={member.profile} />
-                  <div>
+                  <div className="min-w-0 flex-1">
                     <p className="text-sm text-white">
                       {name}
-                      {member.userId === profile?.id ? " (You)" : ""}
+                      {isSelf ? " (You)" : ""}
                     </p>
                     <p className="text-[0.65rem] uppercase tracking-wide text-netflix-muted">
                       {getCrewRoleLabel(member.role)}
                     </p>
                   </div>
+                  {showOwnerMenu ? (
+                    <MemberOverflowMenu
+                      open={menuMemberId === member.id}
+                      disabled={busy}
+                      onOpenChange={(open) =>
+                        setMenuMemberId(open ? member.id : null)
+                      }
+                      onRemove={() => {
+                        setMenuMemberId(null);
+                        setPendingRemoval(member);
+                      }}
+                    />
+                  ) : null}
                 </div>
-                {member.userId !== profile?.id && (
+                {!isSelf && (
                   <CrewMemberPresence
                     userId={member.userId}
                     displayName={name}
@@ -337,6 +382,128 @@ export function CrewPanel() {
 
         {crew ? <CrewStreamingPreferencesPanel crewId={crew.id} /> : null}
       </Surface>
+
+      {pendingRemoval ? (
+        <RemoveMemberDialog
+          displayName={resolveCrewMemberLabel(pendingRemoval.profile)}
+          busy={busy}
+          onCancel={() => setPendingRemoval(null)}
+          onConfirm={() => void confirmRemoveMember()}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function MemberOverflowMenu({
+  open,
+  disabled,
+  onOpenChange,
+  onRemove,
+}: {
+  open: boolean;
+  disabled?: boolean;
+  onOpenChange: (open: boolean) => void;
+  onRemove: () => void;
+}) {
+  const menuId = useId();
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointerDown(event: MouseEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        onOpenChange(false);
+      }
+    }
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onOpenChange(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [open, onOpenChange]);
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        type="button"
+        aria-label="Member actions"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={menuId}
+        disabled={disabled}
+        className="rounded-lg p-1.5 text-netflix-muted/70 transition hover:bg-white/[0.06] hover:text-white disabled:opacity-40"
+        onClick={() => onOpenChange(!open)}
+      >
+        <MoreVertical className="size-4" aria-hidden="true" />
+      </button>
+      {open ? (
+        <div
+          id={menuId}
+          role="menu"
+          className="absolute right-0 z-20 mt-1 min-w-[10.5rem] rounded-lg border border-white/10 bg-netflix-black py-1 shadow-lg"
+        >
+          <button
+            type="button"
+            role="menuitem"
+            className="flex w-full px-3 py-2 text-left text-sm text-rose-300 transition hover:bg-white/[0.06]"
+            onClick={onRemove}
+          >
+            Remove from Crew
+          </button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function RemoveMemberDialog({
+  displayName,
+  busy,
+  onCancel,
+  onConfirm,
+}: {
+  displayName: string;
+  busy: boolean;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-4 sm:items-center"
+      role="presentation"
+      onClick={onCancel}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="remove-crew-member-title"
+        className="w-full max-w-md rounded-2xl border border-white/10 bg-netflix-dark p-5 shadow-xl"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <h3
+          id="remove-crew-member-title"
+          className="text-lg font-semibold text-white"
+        >
+          Remove from Crew?
+        </h3>
+        <p className="mt-2 text-sm leading-relaxed text-netflix-muted">
+          &ldquo;{displayName}&rdquo; will lose access to this crew, shared
+          collections, ratings and Movie Night.
+        </p>
+        <div className="mt-5 flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" disabled={busy} onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button variant="danger" disabled={busy} onClick={onConfirm}>
+            Remove Member
+          </Button>
+        </div>
+      </div>
+    </div>
   );
 }

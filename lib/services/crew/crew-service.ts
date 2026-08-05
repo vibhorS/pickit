@@ -162,6 +162,40 @@ export const crewService = {
     await crewRepo().ensurePersonalCrew(userId, "My");
   },
 
+  /**
+   * Owner removes another member. Soft-deletes crew_members only —
+   * never deletes auth/users rows or collaborative content.
+   */
+  async removeCrewMember(
+    ownerUserId: string,
+    targetUserId: string,
+  ): Promise<CrewSnapshot> {
+    const snapshot = await this.getSnapshot(ownerUserId);
+    if (!snapshot) throw new Error("Join or create a Crew first.");
+
+    const actor = snapshot.members.find(
+      (member) => member.userId === ownerUserId,
+    );
+    if (!actor || actor.role !== "owner") {
+      throw new Error("Only the Crew owner can remove members.");
+    }
+    if (targetUserId === ownerUserId) {
+      throw new Error("You cannot remove yourself from the Crew.");
+    }
+    const target = snapshot.members.find(
+      (member) => member.userId === targetUserId,
+    );
+    if (!target) {
+      throw new Error("That person is not in this Crew.");
+    }
+
+    await crewRepo().removeMemberByOwner(snapshot.crew.id, targetUserId);
+
+    const next = await this.getSnapshot(ownerUserId);
+    if (!next) throw new Error("Member removed but Crew could not be reloaded.");
+    return next;
+  },
+
   async renameCrew(userId: string, name: string): Promise<import("@/lib/crew/types").Crew> {
     const snapshot = await this.getSnapshot(userId);
     if (!snapshot) throw new Error("Join or create a Crew first.");
