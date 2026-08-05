@@ -7,6 +7,7 @@ export type MovieNightLiveState =
   | "WAITING_FOR_PLAYERS"
   | "ROUND_ACTIVE"
   | "ROUND_RESOLVED"
+  | "NEXT_MOVIE"
   | "ROULETTE"
   | "WINNER"
   | "COMPLETE"

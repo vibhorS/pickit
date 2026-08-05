@@ -38,6 +38,7 @@ export function SyncedMovieNightPlay({
   }, [queueItems]);
 
   useEffect(() => {
+    void movieNightLiveService.heartbeat(session.id);
     return movieNightLiveService.subscribe(session.id, onSessionChange);
   }, [onSessionChange, session.id]);
 
@@ -123,6 +124,7 @@ export function SyncedMovieNightPlay({
     .filter((movie): movie is Movie => Boolean(movie));
 
   if (session.state === "WINNER" && winnerItem) {
+    const fromRoulette = session.rouletteSeed != null;
     return (
       <WinnerScreen
         movie={winnerItem.movie}
@@ -130,9 +132,9 @@ export function SyncedMovieNightPlay({
         metadata={winnerItem.metadata}
         addedByUserId={winnerItem.addedByUserId}
         onPickAgain={onExit}
-        headline="✨ It's a Match ✨"
+        headline={fromRoulette ? "🎉 Tonight's Pick" : "✨ It's a Match ✨"}
         primaryLabel="Watch Tonight"
-        exitLabel="Exit Movie Night"
+        exitLabel="End Session"
       />
     );
   }

@@ -43,6 +43,11 @@ export const movieNightLiveService = {
     return movieNightLiveRepository.completeRoulette(sessionId);
   },
 
+  async heartbeat(sessionId: string) {
+    if (!isSupabaseConfigured()) return;
+    await movieNightLiveRepository.heartbeat(sessionId);
+  },
+
   subscribe(
     sessionId: string,
     onChange: (session: MovieNightLiveSession) => void,

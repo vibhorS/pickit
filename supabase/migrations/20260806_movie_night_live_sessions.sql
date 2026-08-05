@@ -138,11 +138,7 @@ begin
 exception when duplicate_object then null;
 end $$;
 
-do $$
-begin
-  alter publication supabase_realtime add table public.movie_night_participants;
-exception when duplicate_object then null;
-end $$;
+-- Votes and participants are intentionally NOT published (private mid-round).
 
 -- =========================
 -- Helpers
@@ -391,10 +387,10 @@ begin
     raise exception 'This movie is no longer the active round';
   end if;
 
+  -- Ensure voter is a participant (no last_seen bump — that would leak via Realtime).
   insert into public.movie_night_participants (session_id, user_id)
   values (p_session_id, auth.uid())
-  on conflict (session_id, user_id) do update
-    set last_seen_at = now();
+  on conflict (session_id, user_id) do nothing;
 
   insert into public.movie_night_votes (session_id, movie_id, user_id, vote)
   values (p_session_id, p_movie_id, auth.uid(), p_vote)
@@ -403,11 +399,9 @@ begin
   participant_count := public.movie_night_participant_count(p_session_id);
   vote_count := public.movie_night_vote_count(p_session_id, p_movie_id);
 
+  -- Privacy: do not mutate the session until every participant has voted.
+  -- Otherwise Realtime would reveal that "someone voted" mid-round.
   if vote_count < participant_count then
-    update public.movie_night_sessions
-    set updated_at = now()
-    where id = p_session_id
-    returning * into session_row;
     return session_row;
   end if;
 
