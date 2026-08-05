@@ -71,6 +71,14 @@ Logical phases `ROUND_RESOLVED` and `NEXT_MOVIE` happen **inside** `submit_movie
 | `complete_movie_night_roulette` | Crew member | `ROULETTE` → `WINNER` after spin window |
 | `heartbeat_movie_night` | Participant | `last_seen_at` only (not used for UI waiting) |
 
+# Client queue hydration
+
+`SyncedMovieNightPlay` builds `queueItems` from `session.activeMovieIds` via
+`hydrateQueueFromSession` (`lib/movie-night/live/hydrate-queue.ts`).
+
+Catalog/stats items are a seed for metadata only. Missing movies are fetched
+from `movies` by id. The UI never trusts a stale local `info.queue`.
+
 ## Client rules
 
 - Never choose next movie, winner, or Maybe membership locally.

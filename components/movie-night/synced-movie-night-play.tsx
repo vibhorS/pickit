@@ -6,6 +6,10 @@ import { LiveRouletteView } from "@/components/movie-night/live-roulette-view";
 import { WinnerScreen } from "@/components/movie-night/winner-screen";
 import { Button } from "@/components/ui/button";
 import { FadeIn } from "@/components/ui/fade-in";
+import {
+  hydrateQueueFromSession,
+  queueCoversSession,
+} from "@/lib/movie-night/live/hydrate-queue";
 import { movieNightLiveService } from "@/lib/movie-night/live/service";
 import type { MovieNightLiveSession } from "@/lib/movie-night/live/types";
 import type { CollectionMovie } from "@/lib/services/movie-service";
@@ -13,17 +17,23 @@ import type { Movie } from "@/lib/types";
 
 type SyncedMovieNightPlayProps = {
   session: MovieNightLiveSession;
-  queueItems: CollectionMovie[];
+  /** Catalog seed only — resolved movies come from session.activeMovieIds. */
+  catalogItems: CollectionMovie[];
   onSessionChange: (session: MovieNightLiveSession) => void;
   onExit: () => void;
 };
 
 export function SyncedMovieNightPlay({
   session,
-  queueItems,
+  catalogItems,
   onSessionChange,
   onExit,
 }: SyncedMovieNightPlayProps) {
+  const [queueItems, setQueueItems] = useState<CollectionMovie[]>([]);
+  const [hydrateState, setHydrateState] = useState<
+    "loading" | "ready" | "error"
+  >("loading");
+  const [hydrateAttempt, setHydrateAttempt] = useState(0);
   const [myVote, setMyVote] = useState<"watch" | "pass" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,11 +41,64 @@ export function SyncedMovieNightPlay({
     MovieNightLiveSession["lastOutcome"]
   >(null);
   const prevOutcomeKey = useRef<string | null>(null);
-  const byId = useMemo(() => {
-    const map = new Map<string, CollectionMovie>();
-    for (const item of queueItems) map.set(item.movie.id, item);
-    return map;
-  }, [queueItems]);
+  const lineupKey = useMemo(
+    () =>
+      [
+        session.id,
+        session.activeMovieIds.join(","),
+        session.maybeMovieIds.join(","),
+        session.winnerMovieId ?? "",
+        session.currentMovieId ?? "",
+      ].join("|"),
+    [
+      session.activeMovieIds,
+      session.currentMovieId,
+      session.id,
+      session.maybeMovieIds,
+      session.winnerMovieId,
+    ],
+  );
+  const catalogSeedKey = useMemo(
+    () => catalogItems.map((item) => item.movie.id).join(","),
+    [catalogItems],
+  );
+  const catalogRef = useRef(catalogItems);
+  catalogRef.current = catalogItems;
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+
+  useEffect(() => {
+    let cancelled = false;
+    setHydrateState("loading");
+    void (async () => {
+      try {
+        const activeSession = sessionRef.current;
+        const next = await hydrateQueueFromSession(
+          activeSession,
+          catalogRef.current,
+        );
+        if (cancelled) return;
+        if (
+          !queueCoversSession(next, activeSession) &&
+          activeSession.currentMovieId
+        ) {
+          setQueueItems(next);
+          setHydrateState("error");
+          return;
+        }
+        setQueueItems(next);
+        setHydrateState("ready");
+      } catch {
+        if (!cancelled) {
+          setQueueItems([]);
+          setHydrateState("error");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [catalogSeedKey, hydrateAttempt, lineupKey]);
 
   useEffect(() => {
     void movieNightLiveService.heartbeat(session.id);
@@ -113,6 +176,12 @@ export function SyncedMovieNightPlay({
     }
   }, [onSessionChange, session.id]);
 
+  const byId = useMemo(() => {
+    const map = new Map<string, CollectionMovie>();
+    for (const item of queueItems) map.set(item.movie.id, item);
+    return map;
+  }, [queueItems]);
+
   const currentItem = session.currentMovieId
     ? byId.get(session.currentMovieId)
     : undefined;
@@ -122,6 +191,42 @@ export function SyncedMovieNightPlay({
   const rouletteMovies = session.maybeMovieIds
     .map((id) => byId.get(id)?.movie)
     .filter((movie): movie is Movie => Boolean(movie));
+
+  if (hydrateState === "loading") {
+    return (
+      <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center px-5 text-center">
+        <p className="text-sm text-netflix-muted">Loading tonight&apos;s lineup…</p>
+      </div>
+    );
+  }
+
+  if (
+    hydrateState === "error" ||
+    (session.state === "ROUND_ACTIVE" &&
+      session.currentMovieId &&
+      !currentItem)
+  ) {
+    return (
+      <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center px-5 text-center">
+        <h1 className="text-xl font-semibold text-white">
+          Movie data failed to load.
+        </h1>
+        <p className="mt-2 text-sm text-netflix-muted">
+          The session is live, but this device couldn&apos;t resolve the current
+          title.
+        </p>
+        <Button
+          className="mt-8"
+          onClick={() => setHydrateAttempt((n) => n + 1)}
+        >
+          Retry
+        </Button>
+        <Button variant="ghost" className="mt-3" onClick={onExit}>
+          Exit
+        </Button>
+      </div>
+    );
+  }
 
   if (session.state === "WINNER" && winnerItem) {
     const fromRoulette = session.rouletteSeed != null;
@@ -190,7 +295,6 @@ export function SyncedMovieNightPlay({
   return (
     <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center px-5 text-center">
       <p className="text-sm text-netflix-muted">Syncing Movie Night…</p>
-      {error ? <p className="mt-3 text-sm text-rose-400">{error}</p> : null}
       <Button variant="ghost" className="mt-6" onClick={onExit}>
         Exit
       </Button>

@@ -63,7 +63,7 @@ type Step =
   | {
       kind: "live";
       collection: Collection;
-      queue: CollectionMovie[];
+      catalogItems: CollectionMovie[];
       session: MovieNightLiveSession;
     };
 
@@ -76,6 +76,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   const [liveError, setLiveError] = useState<string | null>(null);
   const restoredLive = useRef(false);
   const movieNightStartedAt = useRef(0);
+  const liveSessionRef = useRef<MovieNightLiveSession | null>(null);
 
   const createdCollections = useLocalCollectionStore(
     (state) => state.createdCollections,
@@ -256,54 +257,58 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
 
   // Restore active synchronized session for this crew.
   useEffect(() => {
-    if (
-      !hasHydrated ||
-      !isSupabaseConfigured() ||
-      !crewId ||
-      !profile ||
-      restoredLive.current
-    ) {
+    if (!hasHydrated || !isSupabaseConfigured() || !crewId || !profile) {
       return;
     }
+    if (restoredLive.current) return;
     restoredLive.current = true;
     let cancelled = false;
     void (async () => {
       try {
         const active = await movieNightLiveService.getActive(crewId);
         if (cancelled || !active) return;
+
         const card = resolvedCards.find(
           (entry) => entry.collection.id === active.listId,
         );
-        const info = cardReadiness.find(
-          (entry) => entry.collectionId === active.listId,
-        );
-        const queue =
-          info?.queue ??
-          active.activeMovieIds.flatMap((movieId) => {
-            const item = info?.stats.items.find(
-              (entry) => entry.movie.id === movieId,
-            );
-            return item ? [item] : [];
-          });
-        setStep({
-          kind: "live",
-          collection: card?.collection ?? {
-            id: active.listId,
-            name: "Movie Night",
-            emoji: "🍿",
-            items: [],
-          },
-          queue:
-            queue.length > 0
-              ? queue
-              : (info?.stats.items.filter((item) =>
-                  [
-                    ...active.activeMovieIds,
-                    ...active.maybeMovieIds,
-                    ...(active.winnerMovieId ? [active.winnerMovieId] : []),
-                  ].includes(item.movie.id),
-                ) ?? []),
-          session: active,
+        const catalogItems =
+          statsById.get(active.listId)?.items ?? card?.items ?? [];
+
+        setStep((prev) => {
+          if (prev.kind === "live") {
+            const current = prev.session;
+            const currentUpdated = Date.parse(current.updatedAt);
+            const incomingUpdated = Date.parse(active.updatedAt);
+            // Newest session wins; never clobber a newer in-progress start.
+            if (
+              current.id === active.id ||
+              (!Number.isNaN(currentUpdated) &&
+                !Number.isNaN(incomingUpdated) &&
+                currentUpdated > incomingUpdated)
+            ) {
+              return prev;
+            }
+            // Never replace a populated live step with a bare restore while
+            // the same newer local session is already showing.
+            if (
+              currentUpdated >= incomingUpdated &&
+              prev.catalogItems.length > 0
+            ) {
+              return prev;
+            }
+          }
+          liveSessionRef.current = active;
+          return {
+            kind: "live",
+            collection: card?.collection ?? {
+              id: active.listId,
+              name: "Movie Night",
+              emoji: "🍿",
+              items: [],
+            },
+            catalogItems,
+            session: active,
+          };
         });
       } catch (err) {
         if (!cancelled) {
@@ -318,7 +323,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
     return () => {
       cancelled = true;
     };
-  }, [cardReadiness, crewId, hasHydrated, profile, resolvedCards]);
+  }, [crewId, hasHydrated, profile, resolvedCards, statsById]);
 
   const startLiveSession = useCallback(
     async (collection: Collection, queue: CollectionMovie[]) => {
@@ -334,7 +339,32 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
           listId: collection.id,
           movieIds: queue.map((item) => item.movie.id),
         });
-        setStep({ kind: "live", collection, queue, session });
+        const catalogItems =
+          statsById.get(collection.id)?.items ??
+          resolvedCards.find((card) => card.collection.id === collection.id)
+            ?.items ??
+          queue;
+        liveSessionRef.current = session;
+        setStep((prev) => {
+          if (prev.kind === "live") {
+            const prevUpdated = Date.parse(prev.session.updatedAt);
+            const nextUpdated = Date.parse(session.updatedAt);
+            if (
+              prev.session.id !== session.id &&
+              !Number.isNaN(prevUpdated) &&
+              !Number.isNaN(nextUpdated) &&
+              prevUpdated > nextUpdated
+            ) {
+              return prev;
+            }
+          }
+          return {
+            kind: "live",
+            collection,
+            catalogItems,
+            session,
+          };
+        });
         analytics.track("movie_night_started", {
           collectionId: collection.id,
           queueSize: queue.length,
@@ -349,7 +379,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
         setStep({ kind: "picker" });
       }
     },
-    [crewId],
+    [crewId, resolvedCards, statsById],
   );
 
   function generateLineup(collection: Collection, queue: CollectionMovie[]) {
@@ -379,10 +409,39 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   }
 
   const onLiveSessionChange = useCallback((session: MovieNightLiveSession) => {
-    setStep((prev) =>
-      prev.kind === "live" ? { ...prev, session } : prev,
-    );
+    liveSessionRef.current = session;
+    setStep((prev) => {
+      if (prev.kind !== "live") return prev;
+      const prevUpdated = Date.parse(prev.session.updatedAt);
+      const nextUpdated = Date.parse(session.updatedAt);
+      if (
+        prev.session.id === session.id &&
+        !Number.isNaN(prevUpdated) &&
+        !Number.isNaN(nextUpdated) &&
+        prevUpdated > nextUpdated
+      ) {
+        return prev;
+      }
+      return { ...prev, session };
+    });
   }, []);
+
+  const startLineupRef = useRef<{
+    collection: Collection;
+    queue: CollectionMovie[];
+  } | null>(null);
+  if (step.kind === "generating") {
+    startLineupRef.current = {
+      collection: step.collection,
+      queue: step.queue,
+    };
+  }
+
+  const handleLineupComplete = useCallback(() => {
+    const pending = startLineupRef.current;
+    if (!pending) return;
+    void startLiveSession(pending.collection, pending.queue);
+  }, [startLiveSession]);
 
   if (!hasHydrated) {
     return (
@@ -397,9 +456,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
       <LineupGenerator
         collection={step.collection}
         queue={step.queue}
-        onComplete={() => {
-          void startLiveSession(step.collection, step.queue);
-        }}
+        onComplete={handleLineupComplete}
       />
     );
   }
@@ -408,9 +465,11 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
     return (
       <SyncedMovieNightPlay
         session={step.session}
-        queueItems={step.queue}
+        catalogItems={step.catalogItems}
         onSessionChange={onLiveSessionChange}
         onExit={() => {
+          liveSessionRef.current = null;
+          restoredLive.current = false;
           setStep({ kind: "picker" });
           setLiveError(null);
         }}
