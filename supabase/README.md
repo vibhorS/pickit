@@ -24,6 +24,7 @@ In the Supabase SQL editor, run in order:
 3. `supabase/migrations/20260729_phase2b_crew_rls_fix.sql` (required if 2B was applied before this fix)
 4. `supabase/migrations/20260730_users_select_crew_mates.sql` (required so crew mates can read each other's `users` profiles)
 5. `supabase/migrations/20260806_remove_crew_member.sql` (required for owner-only Remove from Crew)
+6. `supabase/migrations/20260806_movie_night_live_sessions.sql` (required for synchronized Movie Night)
 
 Enable Realtime for: `lists`, `recommendations`, `ratings`, `crew_members`, `crew_activity`, `presence` (migration adds publication entries when supported).
 

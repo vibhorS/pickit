@@ -27,6 +27,9 @@ type WinnerScreenProps = {
   metadata?: RecommendationMetadata;
   addedByUserId?: string;
   onPickAgain: () => void;
+  headline?: string;
+  primaryLabel?: string;
+  exitLabel?: string;
 };
 
 export function WinnerScreen({
@@ -35,6 +38,9 @@ export function WinnerScreen({
   metadata,
   addedByUserId,
   onPickAgain,
+  headline = "Tonight's Winner",
+  primaryLabel = "Watch Trailer",
+  exitLabel = "Pick Again",
 }: WinnerScreenProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const runtime = formatRuntime(movie.runtime);
@@ -101,7 +107,7 @@ export function WinnerScreen({
         </motion.div>
 
         <p className="mt-7 text-xs font-semibold uppercase tracking-[0.24em] text-netflix-red">
-          Tonight&apos;s Winner
+          {headline}
         </p>
         <h1 className="mt-2 text-4xl font-bold tracking-tight text-white sm:text-6xl">
           {movie.title}
@@ -127,30 +133,52 @@ export function WinnerScreen({
         )}
 
         <div className="mt-8 grid w-full max-w-md gap-3 sm:grid-cols-2">
-          <a
-            href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${movie.title} ${movie.year} official trailer`)}`}
-            target="_blank"
-            rel="noreferrer"
-            className="btn-primary min-h-12 w-full"
-          >
-            ▶ Watch Trailer
-          </a>
-          <button
-            type="button"
-            onClick={() =>
-              showPlaceholder("Streaming availability is coming soon.")
-            }
-            className="btn-secondary min-h-12 w-full"
-          >
-            📺 Where to Watch
-          </button>
-          <button
-            type="button"
-            onClick={onPickAgain}
-            className="btn-ghost min-h-11 w-full sm:col-span-2"
-          >
-            🔄 Pick Again
-          </button>
+          {primaryLabel === "Watch Tonight" ? (
+            <>
+              <a
+                href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${movie.title} ${movie.year} official trailer`)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-primary min-h-12 w-full sm:col-span-2"
+              >
+                ▶ {primaryLabel}
+              </a>
+              <button
+                type="button"
+                onClick={onPickAgain}
+                className="btn-ghost min-h-11 w-full sm:col-span-2"
+              >
+                {exitLabel}
+              </button>
+            </>
+          ) : (
+            <>
+              <a
+                href={`https://www.youtube.com/results?search_query=${encodeURIComponent(`${movie.title} ${movie.year} official trailer`)}`}
+                target="_blank"
+                rel="noreferrer"
+                className="btn-primary min-h-12 w-full"
+              >
+                ▶ {primaryLabel}
+              </a>
+              <button
+                type="button"
+                onClick={() =>
+                  showPlaceholder("Streaming availability is coming soon.")
+                }
+                className="btn-secondary min-h-12 w-full"
+              >
+                📺 Where to Watch
+              </button>
+              <button
+                type="button"
+                onClick={onPickAgain}
+                className="btn-ghost min-h-11 w-full sm:col-span-2"
+              >
+                {exitLabel}
+              </button>
+            </>
+          )}
         </div>
 
         <div aria-live="polite" className="mt-4 h-5 text-sm text-white/55">
