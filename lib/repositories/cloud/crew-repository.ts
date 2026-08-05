@@ -66,8 +66,11 @@ function mapUser(row: Record<string, unknown>): UserProfile {
 export type CrewRepository = {
   ensurePersonalCrew(userId: string, displayName: string): Promise<Crew>;
   getActiveCrewForUser(userId: string): Promise<Crew | null>;
+  /** All active memberships for a user (newest joined_at first). */
+  listMembershipsForUser(userId: string): Promise<CrewMember[]>;
   getById(crewId: string): Promise<Crew | null>;
   updateCrew(crewId: string, userId: string, patch: { name?: string }): Promise<Crew>;
+  softDeleteCrew(crewId: string): Promise<void>;
   listMembers(crewId: string): Promise<CrewMember[]>;
   listMemberProfiles(crewId: string): Promise<UserProfile[]>;
   addMember(crewId: string, userId: string, role: CrewRole): Promise<CrewMember>;
@@ -133,18 +136,32 @@ export function createCrewRepository(): CrewRepository {
     },
 
     async getActiveCrewForUser(userId) {
+      // One user → one crew. Resolve from crew_members only (never crews.created_by).
+      // Prefer the newest membership so a just-accepted invite wins over a leftover solo crew.
+      const memberships = await this.listMembershipsForUser(userId);
+      if (memberships.length === 0) return null;
+
+      // Prefer a shared crew (someone else is in it) over a solo personal crew.
+      for (const membership of memberships) {
+        const members = await this.listMembers(membership.crewId);
+        if (members.some((member) => member.userId !== userId)) {
+          return this.getById(membership.crewId);
+        }
+      }
+
+      return this.getById(memberships[0]!.crewId);
+    },
+
+    async listMembershipsForUser(userId) {
       const supabase = getSupabaseBrowserClient();
-      const { data: memberships, error } = await supabase
+      const { data, error } = await supabase
         .from("crew_members")
-        .select("crew_id")
+        .select("*")
         .eq("user_id", userId)
         .is("deleted_at", null)
-        .order("joined_at", { ascending: true })
-        .limit(1);
+        .order("joined_at", { ascending: false });
       if (error) throw new Error(error.message);
-      const crewId = memberships?.[0]?.crew_id;
-      if (!crewId) return null;
-      return this.getById(String(crewId));
+      return (data ?? []).map(mapMember);
     },
 
     async getById(crewId) {
@@ -158,6 +175,19 @@ export function createCrewRepository(): CrewRepository {
       if (error) throw new Error(error.message);
       const row = data?.[0];
       return row ? mapCrew(row) : null;
+    },
+
+    async softDeleteCrew(crewId) {
+      const supabase = getSupabaseBrowserClient();
+      const { error } = await supabase
+        .from("crews")
+        .update({
+          deleted_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", crewId)
+        .is("deleted_at", null);
+      if (error) throw new Error(error.message);
     },
 
     async updateCrew(crewId, userId, patch) {

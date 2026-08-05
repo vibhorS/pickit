@@ -7,6 +7,91 @@ import { logger } from "@/lib/observability/logger";
 
 const crewRepo = () => createCrewRepository();
 
+const POPULATED_CREW_MESSAGE =
+  "You're already in a Crew with someone else. Leave that Crew before joining another.";
+
+/**
+ * Soft-leave every active membership except the target crew.
+ * Solo/empty personal crews are archived. Populated crews block the invite.
+ */
+async function leavePriorCrewsForInvite(
+  userId: string,
+  targetCrewId: string,
+): Promise<Set<string>> {
+  const repo = crewRepo();
+  const memberships = await repo.listMembershipsForUser(userId);
+  const vacated = new Set<string>();
+
+  for (const membership of memberships) {
+    if (membership.crewId === targetCrewId) continue;
+
+    const members = await repo.listMembers(membership.crewId);
+    const hasOthers = members.some((member) => member.userId !== userId);
+    if (hasOthers) {
+      throw new Error(POPULATED_CREW_MESSAGE);
+    }
+
+    // Archive while still a member (RLS), then drop membership.
+    try {
+      await repo.softDeleteCrew(membership.crewId);
+    } catch (error) {
+      logger.warn("Could not archive vacated personal crew", {
+        crewId: membership.crewId,
+        message: error instanceof Error ? error.message : "unknown",
+      });
+    }
+    await repo.removeMember(membership.crewId, userId);
+    vacated.add(membership.crewId);
+  }
+
+  return vacated;
+}
+
+/**
+ * Enforce one user → one crew for users who already have dual memberships
+ * (e.g. accepted an invite before cleanup existed).
+ */
+async function reconcileToSingleCrew(userId: string): Promise<void> {
+  const repo = crewRepo();
+  const memberships = await repo.listMembershipsForUser(userId);
+  if (memberships.length <= 1) return;
+
+  const scored = await Promise.all(
+    memberships.map(async (membership) => {
+      const members = await repo.listMembers(membership.crewId);
+      return {
+        membership,
+        hasOthers: members.some((member) => member.userId !== userId),
+      };
+    }),
+  );
+
+  const keep =
+    scored.find((entry) => entry.hasOthers)?.membership ??
+    scored[0]?.membership;
+  if (!keep) return;
+
+  for (const entry of scored) {
+    if (entry.membership.crewId === keep.crewId) continue;
+
+    if (entry.hasOthers) {
+      // Should not happen under product rules — drop this user's extra membership.
+      await repo.removeMember(entry.membership.crewId, userId);
+      continue;
+    }
+
+    try {
+      await repo.softDeleteCrew(entry.membership.crewId);
+    } catch (error) {
+      logger.warn("Could not archive reconciled personal crew", {
+        crewId: entry.membership.crewId,
+        message: error instanceof Error ? error.message : "unknown",
+      });
+    }
+    await repo.removeMember(entry.membership.crewId, userId);
+  }
+}
+
 /**
  * Crew collaboration service — UI never talks to Supabase directly.
  */
@@ -21,6 +106,8 @@ export const crewService = {
   async getSnapshot(userId: string): Promise<CrewSnapshot | null> {
     if (!isSupabaseConfigured()) return null;
     const repo = crewRepo();
+    // Heal dual memberships left by older invite accepts (one user → one crew).
+    await reconcileToSingleCrew(userId);
     const crew = await repo.getActiveCrewForUser(userId);
     if (!crew) return null;
     const [members, profiles, pending, activity] = await Promise.all([
@@ -80,8 +167,12 @@ export const crewService = {
       throw new Error("This Crew invite has expired.");
     }
 
-    // Leave previous solo crew membership soft-delete if only member? Keep simple:
-    // add to invited crew as member.
+    // One user → one crew: leave/archive any prior solo crew, or reject if shared.
+    const vacatedCrewIds = await leavePriorCrewsForInvite(
+      accepter.id,
+      invite.crewId,
+    );
+
     await repo.addMember(invite.crewId, accepter.id, "member");
     await repo.updateInvitation({
       ...invite,
@@ -90,10 +181,10 @@ export const crewService = {
       acceptedByUserId: accepter.id,
     });
 
-    // Attach accepter's owned lists without crew to this crew
+    // Move the accepter's lists onto the joined crew (orphans + vacated personal crew).
     const lists = await getCloudRepositories().lists.listForOwner(accepter.id);
     for (const list of lists) {
-      if (!list.crewId) {
+      if (!list.crewId || vacatedCrewIds.has(list.crewId)) {
         await getCloudRepositories().lists.upsert({
           ...list,
           crewId: invite.crewId,
@@ -111,7 +202,6 @@ export const crewService = {
       occurredAt: new Date().toISOString(),
     });
 
-    // Notify inviter
     await repo.notify({
       userId: invite.invitedByUserId,
       crewId: invite.crewId,
@@ -121,6 +211,9 @@ export const crewService = {
 
     const snapshot = await this.getSnapshot(accepter.id);
     if (!snapshot) throw new Error("Could not load Crew after join.");
+    if (snapshot.crew.id !== invite.crewId) {
+      throw new Error("Joined the Crew, but active Crew did not update. Refresh and try again.");
+    }
     return snapshot;
   },
 
