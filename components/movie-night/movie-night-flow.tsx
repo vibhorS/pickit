@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import { CollectionPickerCard } from "@/components/movie-night/collection-picker-card";
+import { LineupGenerator } from "@/components/movie-night/lineup-generator";
 import { ReadinessSheet } from "@/components/movie-night/readiness-sheet";
 import { SyncedMovieNightPlay } from "@/components/movie-night/synced-movie-night-play";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -58,6 +59,7 @@ type PendingCollection = {
 
 type Step =
   | { kind: "picker" }
+  | { kind: "generating"; collection: Collection; queue: CollectionMovie[] }
   | {
       kind: "live";
       collection: Collection;
@@ -72,7 +74,6 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
   const [step, setStep] = useState<Step>({ kind: "picker" });
   const [pending, setPending] = useState<PendingCollection | null>(null);
   const [liveError, setLiveError] = useState<string | null>(null);
-  const [starting, setStarting] = useState(false);
   const restoredLive = useRef(false);
   const movieNightStartedAt = useRef(0);
   const liveSessionRef = useRef<MovieNightLiveSession | null>(null);
@@ -287,6 +288,8 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
             ) {
               return prev;
             }
+            // Never replace a populated live step with a bare restore while
+            // the same newer local session is already showing.
             if (
               currentUpdated >= incomingUpdated &&
               prev.catalogItems.length > 0
@@ -322,23 +325,6 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
     };
   }, [crewId, hasHydrated, profile, resolvedCards, statsById]);
 
-  const enterLiveSession = useCallback(
-    (
-      collection: Collection,
-      catalogItems: CollectionMovie[],
-      session: MovieNightLiveSession,
-    ) => {
-      liveSessionRef.current = session;
-      setStep({
-        kind: "live",
-        collection,
-        catalogItems,
-        session,
-      });
-    },
-    [],
-  );
-
   const startLiveSession = useCallback(
     async (collection: Collection, queue: CollectionMovie[]) => {
       if (!crewId) {
@@ -347,56 +333,43 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
         return;
       }
       setLiveError(null);
-      const session = await movieNightLiveService.start({
-        crewId,
-        listId: collection.id,
-        movieIds: queue.map((item) => item.movie.id),
-      });
-      const catalogItems =
-        statsById.get(collection.id)?.items ??
-        resolvedCards.find((card) => card.collection.id === collection.id)
-          ?.items ??
-        queue;
-      enterLiveSession(collection, catalogItems, session);
-      analytics.track("movie_night_started", {
-        collectionId: collection.id,
-        queueSize: queue.length,
-        mode: "synced",
-      });
-    },
-    [crewId, enterLiveSession, resolvedCards, statsById],
-  );
-
-  const resumeOrStart = useCallback(
-    async (collection: Collection, queue: CollectionMovie[]) => {
-      if (!crewId) {
-        setLiveError("Join a Crew before starting Movie Night.");
-        return;
-      }
-      setStarting(true);
-      setLiveError(null);
-      setPending(null);
       try {
-        const active = await movieNightLiveService.getActive(crewId);
-        if (active) {
-          const card = resolvedCards.find(
-            (entry) => entry.collection.id === active.listId,
-          );
-          const catalogItems =
-            statsById.get(active.listId)?.items ?? card?.items ?? queue;
-          enterLiveSession(
-            card?.collection ?? {
-              id: active.listId,
-              name: collection.name,
-              emoji: collection.emoji,
-              items: [],
-            },
+        const session = await movieNightLiveService.start({
+          crewId,
+          listId: collection.id,
+          movieIds: queue.map((item) => item.movie.id),
+        });
+        const catalogItems =
+          statsById.get(collection.id)?.items ??
+          resolvedCards.find((card) => card.collection.id === collection.id)
+            ?.items ??
+          queue;
+        liveSessionRef.current = session;
+        setStep((prev) => {
+          if (prev.kind === "live") {
+            const prevUpdated = Date.parse(prev.session.updatedAt);
+            const nextUpdated = Date.parse(session.updatedAt);
+            if (
+              prev.session.id !== session.id &&
+              !Number.isNaN(prevUpdated) &&
+              !Number.isNaN(nextUpdated) &&
+              prevUpdated > nextUpdated
+            ) {
+              return prev;
+            }
+          }
+          return {
+            kind: "live",
+            collection,
             catalogItems,
-            active,
-          );
-          return;
-        }
-        await startLiveSession(collection, queue);
+            session,
+          };
+        });
+        analytics.track("movie_night_started", {
+          collectionId: collection.id,
+          queueSize: queue.length,
+          mode: "synced",
+        });
       } catch (err) {
         setLiveError(
           err instanceof Error
@@ -404,21 +377,17 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
             : "Could not start Movie Night. Apply the live sessions migration in Supabase.",
         );
         setStep({ kind: "picker" });
-      } finally {
-        setStarting(false);
       }
     },
-    [
-      crewId,
-      enterLiveSession,
-      resolvedCards,
-      startLiveSession,
-      statsById,
-    ],
+    [crewId, resolvedCards, statsById],
   );
 
+  function generateLineup(collection: Collection, queue: CollectionMovie[]) {
+    setPending(null);
+    setStep({ kind: "generating", collection, queue });
+  }
+
   function handleSelectCollection(card: (typeof resolvedCards)[number]) {
-    if (starting) return;
     const info = cardReadiness.find(
       (entry) => entry.collectionId === card.collection.id,
     );
@@ -436,7 +405,7 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
       });
       return;
     }
-    void resumeOrStart(card.collection, info.queue);
+    generateLineup(card.collection, info.queue);
   }
 
   const onLiveSessionChange = useCallback((session: MovieNightLiveSession) => {
@@ -457,11 +426,38 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
     });
   }, []);
 
+  const startLineupRef = useRef<{
+    collection: Collection;
+    queue: CollectionMovie[];
+  } | null>(null);
+  if (step.kind === "generating") {
+    startLineupRef.current = {
+      collection: step.collection,
+      queue: step.queue,
+    };
+  }
+
+  const handleLineupComplete = useCallback(() => {
+    const pending = startLineupRef.current;
+    if (!pending) return;
+    void startLiveSession(pending.collection, pending.queue);
+  }, [startLiveSession]);
+
   if (!hasHydrated) {
     return (
       <div className="mx-auto flex min-h-[40vh] max-w-lg items-center justify-center text-sm text-netflix-muted">
         Loading Movie Night…
       </div>
+    );
+  }
+
+  if (step.kind === "generating") {
+    return (
+      <LineupGenerator
+        collection={step.collection}
+        queue={step.queue}
+        onComplete={handleLineupComplete}
+      />
     );
   }
 
@@ -515,11 +511,6 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
           <p className="mt-2 text-sm text-netflix-muted">
             One shared session. Private votes. A synchronized reveal.
           </p>
-          {starting ? (
-            <p className="mt-3 text-sm text-white/80">
-              Starting synchronized Movie Night…
-            </p>
-          ) : null}
           {crew && selectedProviderIds.length === 0 ? (
             <p className="mt-3 text-sm text-netflix-muted/80">
               Tip: set your streaming services in{" "}
@@ -558,7 +549,6 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
                     .filter((url): url is string => Boolean(url))}
                   stats={info.stats}
                   onSelect={() => handleSelectCollection(card)}
-                  disabled={starting}
                 />
               </motion.div>
             );

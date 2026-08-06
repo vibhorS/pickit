@@ -12,7 +12,6 @@ type CollectionPickerCardProps = {
   posterUrls: string[];
   stats: CollectionStats;
   onSelect: () => void;
-  disabled?: boolean;
 };
 
 function readinessCopy(stats: CollectionStats): string {
@@ -36,7 +35,6 @@ export function CollectionPickerCard({
   posterUrls,
   stats,
   onSelect,
-  disabled = false,
 }: CollectionPickerCardProps) {
   const movieLabel = movieCount === 1 ? "1 movie" : `${movieCount} movies`;
 
@@ -44,11 +42,10 @@ export function CollectionPickerCard({
     <motion.button
       type="button"
       onClick={onSelect}
-      disabled={disabled}
-      whileHover={disabled ? undefined : { y: -3 }}
-      whileTap={disabled ? undefined : { scale: 0.99 }}
+      whileHover={{ y: -3 }}
+      whileTap={{ scale: 0.99 }}
       transition={{ duration: MOTION.duration, ease: MOTION.ease }}
-      className="group relative min-h-64 w-full overflow-hidden rounded-3xl bg-netflix-surface text-left shadow-[var(--shadow-card)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-netflix-red disabled:cursor-wait disabled:opacity-70"
+      className="group relative min-h-64 w-full overflow-hidden rounded-3xl bg-netflix-surface text-left shadow-[var(--shadow-card)] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-netflix-red"
     >
       {posterUrls.length > 0 && (
         <div

@@ -4,6 +4,7 @@ import type {
   CaptureSession,
   MovieCandidate,
 } from "@/lib/capture/types";
+import type { DecisionGameId } from "@/lib/decision-games/types";
 
 export type RatingSessionState = {
   kind: "rating";
@@ -28,7 +29,21 @@ export type RecommendationContextDraft = {
   notes: string;
 };
 
-export type CurrentSession = RatingSessionState | CaptureSessionState;
+export type MovieNightSessionState = {
+  kind: "movie-night";
+  collectionId: string;
+  phase: "overview" | "generating" | "games" | "play";
+  gameId?: DecisionGameId;
+  gameState?: unknown;
+  /** Frozen from real shared ratings when this Movie Night starts. */
+  queueMovieIds?: string[];
+  updatedAt: string;
+};
+
+export type CurrentSession =
+  | RatingSessionState
+  | CaptureSessionState
+  | MovieNightSessionState;
 
 type SessionStore = {
   current: CurrentSession | null;
@@ -52,14 +67,9 @@ export const useSessionStore = create<SessionStore>()(
       partialize: (state) => ({ current: state.current }),
       merge: (persisted, current) => {
         const data = (persisted ?? {}) as Partial<SessionStore>;
-        const next = data.current ?? current.current;
-        // Drop legacy solo Movie Night session snapshots.
-        if (next && (next as { kind?: string }).kind === "movie-night") {
-          return { ...current, current: null };
-        }
         return {
           ...current,
-          current: next ?? null,
+          current: data.current ?? current.current,
         };
       },
     },
