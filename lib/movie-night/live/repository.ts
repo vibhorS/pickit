@@ -111,6 +111,17 @@ export const movieNightLiveRepository = {
     });
   },
 
+  async present(sessionId: string): Promise<MovieNightLiveSession> {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("present_movie_night", {
+      p_session_id: sessionId,
+    });
+    if (error) throw new Error(error.message);
+    const row = asRow(data);
+    if (!row) throw new Error("Could not join Movie Night.");
+    return mapMovieNightSessionRow(row);
+  },
+
   async end(sessionId: string): Promise<MovieNightLiveSession> {
     const supabase = getSupabaseBrowserClient();
     const { data, error } = await supabase.rpc("end_movie_night", {

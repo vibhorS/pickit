@@ -107,6 +107,26 @@ export function SyncedMovieNightPlay({
     return movieNightLiveService.subscribe(session.id, onSessionChange);
   }, [onSessionChange, session.id]);
 
+  // While waiting for the crew, mark presence until the server opens ROUND_ACTIVE.
+  useEffect(() => {
+    if (session.state !== "WAITING_FOR_PLAYERS") return undefined;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const next = await movieNightLiveService.present(session.id);
+        if (!cancelled) onSessionChange(next);
+      } catch {
+        // Keep waiting; Realtime may still deliver ROUND_ACTIVE.
+      }
+    };
+    void tick();
+    const timer = window.setInterval(() => void tick(), 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [onSessionChange, session.id, session.state]);
+
   const clearLocalLiveState = useCallback(() => {
     setQueueItems([]);
     setMyVote(null);
@@ -227,6 +247,32 @@ export function SyncedMovieNightPlay({
   const rouletteMovies = session.maybeMovieIds
     .map((id) => byId.get(id)?.movie)
     .filter((movie): movie is Movie => Boolean(movie));
+
+  // Gate: do not open LiveRoundView until the server advances past waiting.
+  if (session.state === "WAITING_FOR_PLAYERS") {
+    return (
+      <div className="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center px-5 text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-netflix-red">
+          Movie Night
+        </p>
+        <h1 className="mt-4 text-3xl font-bold tracking-tight text-white">
+          Waiting for crew…
+        </h1>
+        <p className="mt-3 text-sm text-netflix-muted">
+          Everyone joins the same session. Movie 1 starts when the crew is
+          connected.
+        </p>
+        <Button
+          variant="ghost"
+          className="mt-10"
+          onClick={() => void finishExit(true)}
+          disabled={ending}
+        >
+          Cancel
+        </Button>
+      </div>
+    );
+  }
 
   if (hydrateState === "loading") {
     return (

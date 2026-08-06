@@ -48,6 +48,14 @@ export const movieNightLiveService = {
     await movieNightLiveRepository.heartbeat(sessionId);
   },
 
+  /** Mark presence and begin ROUND_ACTIVE when the full crew has joined. */
+  async present(sessionId: string) {
+    if (!isSupabaseConfigured()) {
+      throw new Error("Cloud is required for live Movie Night.");
+    }
+    return movieNightLiveRepository.present(sessionId);
+  },
+
   async end(sessionId: string) {
     if (!isSupabaseConfigured()) {
       throw new Error("Cloud is required for live Movie Night.");

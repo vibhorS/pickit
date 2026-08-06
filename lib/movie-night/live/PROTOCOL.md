@@ -49,6 +49,17 @@ COMPLETE / NO_MATCH
 
 Logical phases `ROUND_RESOLVED` and `NEXT_MOVIE` happen **inside** `submit_movie_night_vote` in one atomic transaction. Clients never linger on partial tallies; they only see the post-resolution session row (and `last_outcome` for a short “Added to the Maybe pile.” flash).
 
+Entry gate:
+
+```
+start_movie_night → WAITING_FOR_PLAYERS (host present)
+present_movie_night / get_active → upserts participant
+when all crew members have joined → ROUND_ACTIVE (Realtime)
+clients open LiveRoundView together
+```
+
+Solo crews (1 member) skip waiting and open `ROUND_ACTIVE` immediately.
+
 ## Realtime protocol
 
 1. **Subscribe** — clients channel `movie-night:{sessionId}` on `movie_night_sessions` (`*` events, `id=eq.{sessionId}`).
@@ -71,8 +82,9 @@ Logical phases `ROUND_RESOLVED` and `NEXT_MOVIE` happen **inside** `submit_movie
 
 | RPC | Who | Effect |
 | --- | --- | --- |
-| `start_movie_night` | Crew member | Creates session, joins all crew members, `ROUND_ACTIVE` on movie 0 |
-| `get_active_movie_night` | Crew member | Latest non-terminal session for crew |
+| `start_movie_night` | Crew member | Creates session in `WAITING_FOR_PLAYERS` (or `ROUND_ACTIVE` if solo) |
+| `get_active_movie_night` | Crew member | Latest playable session; marks presence; may begin round |
+| `present_movie_night` | Crew member | Join + begin `ROUND_ACTIVE` when full crew is connected |
 | `submit_movie_night_vote` | Participant | Private vote + server resolution |
 | `my_movie_night_vote` | Self | Own vote only |
 | `complete_movie_night_roulette` | Crew member | `ROULETTE` → `WINNER` after spin window |

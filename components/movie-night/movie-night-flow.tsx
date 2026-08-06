@@ -334,16 +334,27 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
       }
       setLiveError(null);
       try {
-        const session = await movieNightLiveService.start({
-          crewId,
-          listId: collection.id,
-          movieIds: queue.map((item) => item.movie.id),
-        });
+        // Prefer the crew's waiting/live session so the second device joins
+        // instead of cancelling the host's lobby.
+        const existing = await movieNightLiveService.getActive(crewId);
+        const session =
+          existing ??
+          (await movieNightLiveService.start({
+            crewId,
+            listId: collection.id,
+            movieIds: queue.map((item) => item.movie.id),
+          }));
         const catalogItems =
+          statsById.get(session.listId)?.items ??
           statsById.get(collection.id)?.items ??
+          resolvedCards.find((card) => card.collection.id === session.listId)
+            ?.items ??
           resolvedCards.find((card) => card.collection.id === collection.id)
             ?.items ??
           queue;
+        const liveCollection =
+          resolvedCards.find((card) => card.collection.id === session.listId)
+            ?.collection ?? collection;
         liveSessionRef.current = session;
         setStep((prev) => {
           if (prev.kind === "live") {
@@ -360,16 +371,18 @@ export function MovieNightFlow({ cards }: MovieNightFlowProps) {
           }
           return {
             kind: "live",
-            collection,
+            collection: liveCollection,
             catalogItems,
             session,
           };
         });
-        analytics.track("movie_night_started", {
-          collectionId: collection.id,
-          queueSize: queue.length,
-          mode: "synced",
-        });
+        if (!existing) {
+          analytics.track("movie_night_started", {
+            collectionId: collection.id,
+            queueSize: queue.length,
+            mode: "synced",
+          });
+        }
       } catch (err) {
         setLiveError(
           err instanceof Error
