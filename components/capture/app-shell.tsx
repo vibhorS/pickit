@@ -30,6 +30,7 @@ export function AppShell({ children }: AppShellProps) {
     "/rate/",
     "/tonight/",
     "/decision/",
+    "/decide",
     "/invite/",
   ];
   const hideNavigation = immersivePrefixes.some((prefix) =>
