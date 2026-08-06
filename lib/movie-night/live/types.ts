@@ -13,6 +13,15 @@ export type MovieNightLiveState =
   | "COMPLETE"
   | "NO_MATCH";
 
+/** Playable in-progress states — completed/winner/no-match are never restored. */
+export const MOVIE_NIGHT_ACTIVE_STATES: readonly MovieNightLiveState[] = [
+  "WAITING_FOR_PLAYERS",
+  "ROUND_ACTIVE",
+  "ROUND_RESOLVED",
+  "NEXT_MOVIE",
+  "ROULETTE",
+] as const;
+
 export type MovieNightVoteValue = "watch" | "pass";
 
 export type MovieNightLastOutcome = "match" | "all_pass" | "maybe";
@@ -36,6 +45,14 @@ export type MovieNightLiveSession = {
   updatedAt: string;
   completedAt: string | null;
 };
+
+export function isMovieNightSessionActive(
+  session: Pick<MovieNightLiveSession, "state">,
+): boolean {
+  return (MOVIE_NIGHT_ACTIVE_STATES as readonly string[]).includes(
+    session.state,
+  );
+}
 
 export function mapMovieNightSessionRow(
   row: Record<string, unknown>,

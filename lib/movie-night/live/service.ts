@@ -48,6 +48,13 @@ export const movieNightLiveService = {
     await movieNightLiveRepository.heartbeat(sessionId);
   },
 
+  async end(sessionId: string) {
+    if (!isSupabaseConfigured()) {
+      throw new Error("Cloud is required for live Movie Night.");
+    }
+    return movieNightLiveRepository.end(sessionId);
+  },
+
   subscribe(
     sessionId: string,
     onChange: (session: MovieNightLiveSession) => void,

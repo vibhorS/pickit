@@ -1,5 +1,6 @@
 import { getSupabaseBrowserClient } from "@/lib/supabase/client";
 import {
+  isMovieNightSessionActive,
   mapMovieNightSessionRow,
   type MovieNightLiveSession,
   type MovieNightVoteValue,
@@ -42,7 +43,9 @@ export const movieNightLiveRepository = {
     });
     if (error) throw new Error(error.message);
     const row = asRow(data);
-    return row ? mapMovieNightSessionRow(row) : null;
+    if (!row) return null;
+    const session = mapMovieNightSessionRow(row);
+    return isMovieNightSessionActive(session) ? session : null;
   },
 
   async getById(sessionId: string): Promise<MovieNightLiveSession | null> {
@@ -106,6 +109,17 @@ export const movieNightLiveRepository = {
     await supabase.rpc("heartbeat_movie_night", {
       p_session_id: sessionId,
     });
+  },
+
+  async end(sessionId: string): Promise<MovieNightLiveSession> {
+    const supabase = getSupabaseBrowserClient();
+    const { data, error } = await supabase.rpc("end_movie_night", {
+      p_session_id: sessionId,
+    });
+    if (error) throw new Error(error.message);
+    const row = asRow(data);
+    if (!row) throw new Error("Could not end Movie Night.");
+    return mapMovieNightSessionRow(row);
   },
 
   subscribe(

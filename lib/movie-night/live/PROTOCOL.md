@@ -58,7 +58,14 @@ Logical phases `ROUND_RESOLVED` and `NEXT_MOVIE` happen **inside** `submit_movie
    - Mid-round: row written privately; **session row unchanged** → no Realtime event → peers cannot infer that anyone voted.
    - When the last required vote arrives: server resolves and updates the session → one Realtime event → all devices advance together.
 5. **Roulette** — server sets `winner_movie_id`, `roulette_seed`, `roulette_started_at` when entering `ROULETTE`. Clients animate from `roulette_started_at` for a fixed duration, then call `complete_movie_night_roulette` (idempotent; server enforces the time gate).
-6. **Reconnect** — `get_active_movie_night(crew_id)` restores session + re-upserts participant; `my_movie_night_vote` restores own vote for the current movie (duplicate inserts no-op).
+6. **Reconnect** — `get_active_movie_night(crew_id)` restores only playable states
+   (`WAITING_FOR_PLAYERS`, `ROUND_ACTIVE`, `ROUND_RESOLVED`, `NEXT_MOVIE`, `ROULETTE`).
+   Never restores `WINNER`, `NO_MATCH`, or `COMPLETE`. `my_movie_night_vote` restores
+   own vote for the current movie (duplicate inserts no-op).
+7. **End / Exit** — `end_movie_night(session_id)` marks `COMPLETE` + `completed_at`.
+   Clients unsubscribe, clear local queue/votes, and return to the landing page.
+   `start_movie_night` always closes any non-`COMPLETE` peer session first and inserts
+   a brand-new `sessionId`.
 
 ## RPCs
 
@@ -69,6 +76,7 @@ Logical phases `ROUND_RESOLVED` and `NEXT_MOVIE` happen **inside** `submit_movie
 | `submit_movie_night_vote` | Participant | Private vote + server resolution |
 | `my_movie_night_vote` | Self | Own vote only |
 | `complete_movie_night_roulette` | Crew member | `ROULETTE` → `WINNER` after spin window |
+| `end_movie_night` | Crew member | Marks session `COMPLETE` (exit / cancel / leave) |
 | `heartbeat_movie_night` | Participant | `last_seen_at` only (not used for UI waiting) |
 
 # Client queue hydration

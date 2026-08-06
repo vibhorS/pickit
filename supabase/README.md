@@ -26,6 +26,7 @@ In the Supabase SQL editor, run in order:
 5. `supabase/migrations/20260806_remove_crew_member.sql` (required for owner-only Remove from Crew)
 6. `supabase/migrations/20260806_movie_night_live_sessions.sql` (required for synchronized Movie Night)
 7. `supabase/migrations/20260806_movie_night_vote_privacy.sql` (required if #6 was applied before vote-privacy hardening)
+8. `supabase/migrations/20260806_movie_night_session_cleanup.sql` (required so finished sessions are never restored; adds `end_movie_night`)
 
 Enable Realtime for: `lists`, `recommendations`, `ratings`, `crew_members`, `crew_activity`, `presence`, `movie_night_sessions` (votes/participants stay off Realtime).
 

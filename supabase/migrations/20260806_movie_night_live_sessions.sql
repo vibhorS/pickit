@@ -203,7 +203,7 @@ begin
     raise exception 'Movie Night needs at least one movie';
   end if;
 
-  -- End any other active session for this crew.
+  -- End every non-complete session for this crew (incl. WINNER / NO_MATCH / live).
   update public.movie_night_sessions
   set
     state = 'COMPLETE',
@@ -211,7 +211,7 @@ begin
     updated_at = now()
   where crew_id = p_crew_id
     and deleted_at is null
-    and state not in ('COMPLETE', 'NO_MATCH', 'WINNER');
+    and state <> 'COMPLETE';
 
   first_movie := p_movie_ids[1];
 
@@ -285,7 +285,13 @@ begin
   from public.movie_night_sessions s
   where s.crew_id = p_crew_id
     and s.deleted_at is null
-    and s.state not in ('COMPLETE', 'NO_MATCH')
+    and s.state in (
+      'WAITING_FOR_PLAYERS',
+      'ROUND_ACTIVE',
+      'ROUND_RESOLVED',
+      'NEXT_MOVIE',
+      'ROULETTE'
+    )
   order by s.started_at desc
   limit 1;
 

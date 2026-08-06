@@ -36,11 +36,13 @@ export function SyncedMovieNightPlay({
   const [hydrateAttempt, setHydrateAttempt] = useState(0);
   const [myVote, setMyVote] = useState<"watch" | "pass" | null>(null);
   const [busy, setBusy] = useState(false);
+  const [ending, setEnding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [flashOutcome, setFlashOutcome] = useState<
     MovieNightLiveSession["lastOutcome"]
   >(null);
   const prevOutcomeKey = useRef<string | null>(null);
+  const finishingRef = useRef(false);
   const lineupKey = useMemo(
     () =>
       [
@@ -104,6 +106,40 @@ export function SyncedMovieNightPlay({
     void movieNightLiveService.heartbeat(session.id);
     return movieNightLiveService.subscribe(session.id, onSessionChange);
   }, [onSessionChange, session.id]);
+
+  const clearLocalLiveState = useCallback(() => {
+    setQueueItems([]);
+    setMyVote(null);
+    setFlashOutcome(null);
+    setError(null);
+    setHydrateState("loading");
+  }, []);
+
+  const finishExit = useCallback(
+    async (markComplete: boolean) => {
+      if (finishingRef.current) return;
+      finishingRef.current = true;
+      setEnding(true);
+      try {
+        if (markComplete && session.state !== "COMPLETE") {
+          await movieNightLiveService.end(session.id);
+        }
+      } catch {
+        // Still leave local live UI so the user can start again.
+      } finally {
+        clearLocalLiveState();
+        onExit();
+      }
+    },
+    [clearLocalLiveState, onExit, session.id, session.state],
+  );
+
+  // Peer ended / server completed — leave live UI; do not re-mark complete.
+  useEffect(() => {
+    if (session.state === "COMPLETE") {
+      void finishExit(false);
+    }
+  }, [finishExit, session.state]);
 
   useEffect(() => {
     const key = `${session.lastOutcome ?? ""}:${session.lastOutcomeMovieId ?? ""}:${session.updatedAt}`;
@@ -221,7 +257,7 @@ export function SyncedMovieNightPlay({
         >
           Retry
         </Button>
-        <Button variant="ghost" className="mt-3" onClick={onExit}>
+        <Button variant="ghost" className="mt-3" onClick={() => void finishExit(true)} disabled={ending}>
           Exit
         </Button>
       </div>
@@ -236,7 +272,7 @@ export function SyncedMovieNightPlay({
         source={winnerItem.source}
         metadata={winnerItem.metadata}
         addedByUserId={winnerItem.addedByUserId}
-        onPickAgain={onExit}
+        onPickAgain={() => void finishExit(true)}
         headline={fromRoulette ? "🎉 Tonight's Pick" : "✨ It's a Match ✨"}
         primaryLabel="Watch Tonight"
         exitLabel="End Session"
@@ -267,7 +303,7 @@ export function SyncedMovieNightPlay({
         <p className="mt-3 text-sm text-netflix-muted">
           Nobody landed on the same Watch. Start again when you&apos;re ready.
         </p>
-        <Button className="mt-8" onClick={onExit}>
+        <Button className="mt-8" onClick={() => void finishExit(true)} disabled={ending}>
           Start Again
         </Button>
       </div>
@@ -295,7 +331,7 @@ export function SyncedMovieNightPlay({
   return (
     <div className="mx-auto flex min-h-[50vh] max-w-md flex-col items-center justify-center px-5 text-center">
       <p className="text-sm text-netflix-muted">Syncing Movie Night…</p>
-      <Button variant="ghost" className="mt-6" onClick={onExit}>
+      <Button variant="ghost" className="mt-6" onClick={() => void finishExit(true)} disabled={ending}>
         Exit
       </Button>
     </div>
